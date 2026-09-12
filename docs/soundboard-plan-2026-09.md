@@ -13,7 +13,8 @@ live record, undo, songs autosaved to `Arcade.store`. WP4 shipped 2026-09-12
 riff codes, the cue composer publishing "My sounds" as a pack). WP5 shipped
 2026-09-12 (render to WAV, daily kit, jam, one record). WP6 shipped
 2026-09-12: `tools/smoke.mjs` — the fleet-wide "every pack loads, every cue
-is audible" gate — first-open hint, README, promotion out of `inDevelopment`. Written 2026-09-12 against launcher SDK 3.14.0 and `arcade-audio.js` as of
+is audible" gate — first-open hint, README. **Still `inDevelopment`**: every
+check above is automated; the ear pass and real use are what promote it. Written 2026-09-12 against launcher SDK 3.14.0 and `arcade-audio.js` as of
 launcher `main`, with every fleet pack read in full (§2).
 
 Audio Tune is a new Paul's Arcade app (gameId `audio-tune`) that turns the
