@@ -7,6 +7,13 @@
 
 import * as Packs from './js/packs.js';
 import { BoardsView } from './js/views/boards.js';
+import { LabView } from './js/views/lab.js';
+import * as Recorder from './js/recorder.js';
+
+// The recorder wraps the element library so Explore can read a cue's recipe
+// (docs/explore-design.md). Packs capture the library at load, so this must
+// run before the first pack loads — i.e. here, at module evaluation.
+Recorder.install(window);
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -21,7 +28,7 @@ const prefs = {
 
 const views = {
   play: () => new BoardsView($('#view'), { prefs }),
-  explore: () => placeholder('Explore', 'The Element Lab arrives in WP2: every gesture in the library with its knobs exposed, a room to hear it in, and "copy as pack code".'),
+  explore: () => new LabView($('#view'), { prefs }),
   compose: () => placeholder('Compose', 'The sequencer arrives in WP3: pads become tracks, tracks become songs.'),
 };
 
@@ -40,6 +47,9 @@ function placeholder(title, text) {
 
 let current = null;
 let currentName = null;
+
+// A read-only handle for the browser console and the smoke test.
+window.AudioTune = { get view() { return current; }, get viewName() { return currentName; } };
 
 function show(name) {
   if (!views[name] || name === currentName) return;

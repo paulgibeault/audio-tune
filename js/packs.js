@@ -112,6 +112,13 @@ function suspendedByArcade() {
   return !!(window.Arcade && window.Arcade.context && window.Arcade.context.suspended);
 }
 
+/** A loaded pack's own room bus (built lazily), or null. */
+export function busFor(id) {
+  const entry = registry.get(id);
+  if (!entry || entry.status !== 'ready' || entry.pack.kind === 'spec') return null;
+  return packBus(entry);
+}
+
 /** The pack's own room, chained into the SDK bus. Built lazily. */
 function packBus(entry) {
   if (entry.bus) return entry.bus;
@@ -138,10 +145,20 @@ export function cue(id, name) {
 }
 
 /**
- * Fire a one-shot cue. opts: { params, seed, velocity, when }.
+ * Fire a one-shot cue through its pack's own room.
+ * opts: { params, seed, velocity, when }.
  * Returns { dur } (seconds the cue asked for) or null when nothing played.
  */
 export function fire(id, name, opts = {}) {
+  return fireVia(id, name, null, opts);
+}
+
+/**
+ * Fire a one-shot cue into an explicit bus (null = the pack's own room).
+ * opts additionally takes { send } to override the cue's declared distance
+ * — `send: 0` is the audition renderer's "dry" rendering.
+ */
+export function fireVia(id, name, viaBus, opts = {}) {
   const entry = registry.get(id);
   if (!entry || entry.status !== 'ready') return null;
   if (!enabled()) return null;
@@ -156,11 +173,11 @@ export function fire(id, name, opts = {}) {
     return { dur: specDuration(c.spec) };
   }
 
-  const bus = packBus(entry);
+  const bus = viaBus || packBus(entry);
   if (!bus) return null;
   const el = E();
   const ctx = bus.ctx;
-  const o = el.out(bus, c.send);
+  const o = el.out(bus, typeof opts.send === 'number' ? clamp(opts.send, 0, 1) : c.send);
   o.gain.value = velocity;
   const when = typeof opts.when === 'number' ? opts.when : ctx.currentTime;
   const seed = Number.isFinite(opts.seed) ? opts.seed : nextSeed();

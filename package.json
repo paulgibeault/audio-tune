@@ -8,5 +8,6 @@
   },
   "scripts": {
     "test": "node tools/verify-artifact.mjs && node --test 'tests/*.test.js'"
-  }
+  },
+  "type": "module"
 }

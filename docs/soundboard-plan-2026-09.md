@@ -2,7 +2,10 @@
 
 Status: **IN PROGRESS.** WP1 shipped 2026-09-12 (scaffold, pack loader, ten fleet
 boards; 12/12 acceptance; every fleet cue verified audible through the loader).
-WP2–WP6 open. Written 2026-09-12 against launcher SDK 3.14.0 and `arcade-audio.js` as of
+WP2 shipped 2026-09-12 as the Explore view, reshaped by
+[explore-design.md](explore-design.md): a fleet cue becomes a recorded,
+editable recipe; every parameter gets a control whose picture is its meaning;
+help on every control and a Guide. WP3–WP6 open. Written 2026-09-12 against launcher SDK 3.14.0 and `arcade-audio.js` as of
 launcher `main`, with every fleet pack read in full (§2).
 
 Audio Tune is a new Paul's Arcade app (gameId `audio-tune`) that turns the
