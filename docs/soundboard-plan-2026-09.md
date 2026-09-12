@@ -538,17 +538,19 @@ audio-tune/
 
 ## 8. Framework follow-ups (none required for v1)
 
-| # | Where | What | Why |
-| --- | --- | --- | --- |
-| F1 | launcher `catalog.json` | optional `soundpack` URL per game | retires `fleet-packs.json`; discovery from the authoritative list |
-| F2 | moon-lit, hecknsic packs | move `ambient`/`insects`/`pulse`/`tension` into `CUES` + `SUSTAINED`, sends into `SENDS` | one bed convention fleet-wide (si-syn and grav-well already do this); retires the manifest's `beds` override |
-| F3 | `arcade-audio.js` | `E.spec(ctx, dest, when, spec)` — the spec voice as an element | one implementation for SDK `play()` and the board's scheduler |
-| F4 | `arcade-audio.js` `createBus` | `plain: true` to skip shelf + compressor | only if WP1's measurement says the doubled compressor is audible |
-| F5 | `arcade-audio.js` | `E.schema` — param names/ranges/defaults per element | retires `element-params.js`; also useful to `analyze.mjs` |
-| F6 | cardstock | `soundpack.config.json` + audition | the one pack the offline renderer cannot reach |
-| F7 | moon-lit `js/sfx.js` | drop `droplet`, `stream` from the gate | over-strict by two |
-| F8 | hecknsic `js/soundpack.js` | remove dead `collect` in `grandpoobah`, `over-achiever` | plumbing that does nothing |
-| F9 | cozy-solitaire, si-syn `index.html` | delete the stale "falls back to chiptune" comments | there is no fallback, by fleet policy |
+Filed 2026-09-12; every row is tracked in the repo it addresses.
+
+| # | Where | What | Why | Issue |
+| --- | --- | --- | --- | --- |
+| F1 | launcher `catalog.json` | optional `soundpack` URL per game | retires `fleet-packs.json`; discovery from the authoritative list | [launcher#158](https://github.com/paulgibeault/paulgibeault.github.io/issues/158) |
+| F2 | moon-lit, hecknsic packs | move `ambient`/`insects`/`pulse`/`tension` into `CUES` + `SUSTAINED`, sends into `SENDS` | one bed convention fleet-wide (si-syn and grav-well already do this); retires the manifest's `beds` override | [moon-lit#43](https://github.com/paulgibeault/moon-lit/issues/43), [hecknsic#70](https://github.com/paulgibeault/hecknsic/issues/70) |
+| F3 | `arcade-audio.js` | `E.spec(ctx, dest, when, spec)` — the spec voice as an element | one implementation for SDK `play()` and the board's scheduler | [launcher#159](https://github.com/paulgibeault/paulgibeault.github.io/issues/159) |
+| F4 | `arcade-audio.js` `createBus` | `plain: true` to skip shelf + compressor | only if WP1's measurement says the doubled compressor is audible | [launcher#160](https://github.com/paulgibeault/paulgibeault.github.io/issues/160) |
+| F5 | `arcade-audio.js` | `E.schema` — param names/ranges/defaults per element | retires `element-params.js`; also useful to `analyze.mjs` | [launcher#161](https://github.com/paulgibeault/paulgibeault.github.io/issues/161) |
+| F6 | cardstock | `soundpack.config.json` + audition | the one pack the offline renderer cannot reach | [cardstock#187](https://github.com/paulgibeault/cardstock/issues/187) |
+| F7 | moon-lit `js/sfx.js` | drop `droplet`, `stream` from the gate | over-strict by two | [moon-lit#44](https://github.com/paulgibeault/moon-lit/issues/44) |
+| F8 | hecknsic `js/soundpack.js` | remove dead `collect` in `grandpoobah`, `over-achiever` | plumbing that does nothing | [hecknsic#71](https://github.com/paulgibeault/hecknsic/issues/71) |
+| F9 | cozy-solitaire, si-syn `index.html` | delete the stale "falls back to chiptune" comments | there is no fallback, by fleet policy | [cozy-solitaire#28](https://github.com/paulgibeault/cozy-solitaire/issues/28), [si-syn#34](https://github.com/paulgibeault/si-syn/issues/34) |
 
 ---
 
