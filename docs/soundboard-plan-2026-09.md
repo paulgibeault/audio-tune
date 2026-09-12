@@ -8,7 +8,12 @@ editable recipe; every parameter gets a control whose picture is its meaning;
 help on every control and a Guide. WP3 shipped 2026-09-12: the Compose
 view — lookahead clock against the audio context, tracks bound to fleet cues
 played through their own rooms, a velocity step grid, patterns and a chain,
-live record, undo, songs autosaved to `Arcade.store`. WP4–WP6 open. Written 2026-09-12 against launcher SDK 3.14.0 and `arcade-audio.js` as of
+live record, undo, songs autosaved to `Arcade.store`. WP4 shipped 2026-09-12
+(my boards with a pad editor, share / send / import for boards and songs,
+riff codes, the cue composer publishing "My sounds" as a pack). WP5 shipped
+2026-09-12 (render to WAV, daily kit, jam, one record). WP6 shipped
+2026-09-12: `tools/smoke.mjs` — the fleet-wide "every pack loads, every cue
+is audible" gate — first-open hint, README, promotion out of `inDevelopment`. Written 2026-09-12 against launcher SDK 3.14.0 and `arcade-audio.js` as of
 launcher `main`, with every fleet pack read in full (§2).
 
 Audio Tune is a new Paul's Arcade app (gameId `audio-tune`) that turns the
