@@ -11,6 +11,7 @@
 // See docs/soundboard-plan-2026-09.md §3.2–3.4.
 
 import { normaliseGraphPack, normaliseSpecPack, scaleSpec, clamp } from './pack-shape.js';
+import { playAt as playSpecAt } from './spec-voice.js';
 
 const registry = new Map();      // id → entry
 let manifest = null;
@@ -169,7 +170,14 @@ export function fireVia(id, name, viaBus, opts = {}) {
   if (entry.pack.kind === 'spec') {
     const a = audio();
     const overrides = specOverrides(entry, c, opts.params);
-    a.play(scaleSpec(c.spec, velocity, overrides));
+    const spec = scaleSpec(c.spec, velocity, overrides);
+    if (typeof opts.when === 'number') {
+      // On the grid: our own schedulable voice into the SDK bus (§3.4).
+      const b = sdkBus();
+      if (!b) return null;
+      return { dur: playSpecAt(b.ctx, b.dry, opts.when, spec) };
+    }
+    a.play(spec);   // a pad hit: the SDK's own engine, exactly as the game plays it
     return { dur: specDuration(c.spec) };
   }
 

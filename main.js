@@ -8,6 +8,7 @@
 import * as Packs from './js/packs.js';
 import { BoardsView } from './js/views/boards.js';
 import { LabView } from './js/views/lab.js';
+import { ComposeView } from './js/views/compose.js';
 import * as Recorder from './js/recorder.js';
 
 // The recorder wraps the element library so Explore can read a cue's recipe
@@ -29,7 +30,7 @@ const prefs = {
 const views = {
   play: () => new BoardsView($('#view'), { prefs }),
   explore: () => new LabView($('#view'), { prefs }),
-  compose: () => placeholder('Compose', 'The sequencer arrives in WP3: pads become tracks, tracks become songs.'),
+  compose: () => new ComposeView($('#view'), { prefs }),
 };
 
 function placeholder(title, text) {

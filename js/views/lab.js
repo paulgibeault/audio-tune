@@ -668,7 +668,7 @@ export class LabView {
     if (!this.analyser) { this.bus(); if (!this.analyser) return; }
     if (!this.animated()) { let n = 0; const tick = () => { this.readMeter(); if (++n < 8) setTimeout(tick, 120); }; tick(); return; }
     if (!this.loop && window.Arcade && typeof Arcade.loop === 'function') this.loop = Arcade.loop(() => this.drawScope());
-    if (this.loop && !this.loop.running) this.loop.start();
+    if (this.loop && !this.loop.running()) this.loop.start();
   }
 
   readMeter() {
