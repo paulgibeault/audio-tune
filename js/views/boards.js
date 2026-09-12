@@ -12,6 +12,9 @@ import { control, panelHelp, el } from '../controls.js';
 import { packBoard, BOARD_SIZES } from '../validate.js';
 import { RiffBuffer, packRiff, unpackRiff, riffLength } from '../riff.js';
 import * as Share from '../share.js';
+import * as Daily from '../daily.js';
+import * as Stats from '../stats.js';
+import { checkPad } from '../validate.js';
 
 const LONG_PRESS_MS = 420;
 
@@ -28,6 +31,8 @@ export class BoardsView {
     this.editing = false;
     this.riff = new RiffBuffer();
     this.riffPlaying = null;
+    this.unsubs = [];
+    this.jamPeers = [];
     this.onKey = this.onKey.bind(this);
     this.onKeyUp = this.onKeyUp.bind(this);
   }
@@ -38,7 +43,9 @@ export class BoardsView {
     this.head = el('div', { class: 'board-head' });
     this.grid = el('div', { class: 'pads', role: 'group', 'aria-label': 'Pads' });
     this.riffCard = el('section', { class: 'card riff-card' });
-    this.root.append(this.tabs, this.head, this.grid, this.riffCard);
+    this.jamCard = el('section', { class: 'card jam-card', hidden: true });
+    this.root.append(this.tabs, this.head, this.grid, this.riffCard, this.jamCard);
+    this.mountJam();
     document.addEventListener('keydown', this.onKey);
     document.addEventListener('keyup', this.onKeyUp);
     this.mine = await Boards.list();
@@ -54,6 +61,9 @@ export class BoardsView {
     document.removeEventListener('keyup', this.onKeyUp);
     this.stopAllBeds(0.3);
     this.closeSheet();
+    for (const u of this.unsubs) { try { u(); } catch (e) { /* noop */ } }
+    this.unsubs = [];
+    Stats.flush();
   }
 
   isMine() { return !!this.board; }
@@ -67,7 +77,8 @@ export class BoardsView {
       class: 'pack-tab is-mine', role: 'tab', type: 'button', 'aria-selected': String(b.id === this.boardId),
       style: '--hue:48', onclick: () => this.open(b.id),
     }, b.name));
-    this.tabs.replaceChildren(...fleet, el('span', { class: 'tab-sep', 'aria-hidden': 'true' }), ...mine,
+    const daily = el('button', { class: 'pack-tab is-daily', role: 'tab', type: 'button', 'aria-selected': String(this.boardId === 'daily'), style: '--hue:300', onclick: () => this.open('daily') }, '☼ Daily kit');
+    this.tabs.replaceChildren(...fleet, el('span', { class: 'tab-sep', 'aria-hidden': 'true' }), daily, ...mine,
       el('button', { class: 'pack-tab is-new', type: 'button', onclick: () => this.createBoard() }, '+ New board'),
       el('button', { class: 'pack-tab is-new', type: 'button', onclick: () => this.importBoard() }, 'Import…'));
   }
@@ -83,8 +94,37 @@ export class BoardsView {
     this.prefs.set('board', id);
     this.board = this.mine.find((b) => b.id === id) || null;
     this.renderTabs();
+    if (id === 'daily') return this.openDaily();
     if (this.board) return this.openMine();
     return this.openFleet(Packs.get(id));
+  }
+
+  async openDaily() {
+    const A = window.Arcade;
+    const date = A && A.daily ? A.daily.dateStr() : new Date().toISOString().slice(0, 10);
+    const seed = A && A.daily ? A.daily.seed('kit') : 1;
+    const rng = A && typeof A.rng === 'function' ? A.rng(seed) : Math.random;
+    const packIds = Packs.list().filter((p) => p.id !== 'mine').map((p) => p.id);
+    const kit = Daily.kitBoard(date, rng, packIds);
+    this.root.style.setProperty('--hue', 300);
+    this.head.replaceChildren(
+      el('h2', { class: 'board-name' }, kit.name),
+      el('p', { class: 'board-place' }, 'Eight pads picked across the fleet — the same eight for everyone today. Play a riff on it and share the code.'),
+      el('p', { class: 'board-status' }, 'Loading packs…'));
+    this.grid.replaceChildren();
+    await Promise.all([...new Set(kit.pads.filter(Boolean).map((p) => p.pack))].map((id) => Packs.load(id)));
+    if (this.boardId !== 'daily') return;
+    this.head.querySelector('.board-status').remove();
+    this.pads = kit.pads.map((p, i) => (p ? this.padModel(i, p, Packs.cue(p.pack, p.cue)) : { index: i, empty: true, fixed: true }));
+    this.renderGrid();
+    this.head.append(el('div', { class: 'board-tools' },
+      el('button', { class: 'tool', type: 'button', onclick: async () => {
+        const b = Boards.newBoard(kit.name, 16); b.pads = kit.pads.map((p) => (p ? { ...p } : null));
+        if (await Boards.save(b)) { this.mine = await Boards.list(); this.open(b.id); Share.toast('Kit saved to My boards', 'success'); }
+      } }, 'Save a copy to My boards'),
+      el('span', { class: 'tool-hint' }, 'Hold a pad for its settings.'),
+      panelHelp(PANELS.dailyKit.title, PANELS.dailyKit.body)));
+    Stats.bump('kitsPlayed');
   }
 
   async openFleet(entry) {
@@ -155,6 +195,7 @@ export class BoardsView {
   renderGrid() { this.grid.replaceChildren(...this.pads.map((p) => (p.empty ? this.renderEmpty(p) : this.renderPad(p)))); }
 
   renderEmpty(p) {
+    if (p.fixed) return el('div', { class: 'pad is-empty is-fixed', 'aria-hidden': 'true' });
     return el('button', { class: 'pad is-empty', type: 'button', 'aria-label': `empty pad ${p.index + 1} — assign a sound`, onclick: () => this.openPadEditor(p.index) },
       el('span', { class: 'pad-key', 'aria-hidden': 'true' }, keyForPad(p.index)), el('span', { class: 'pad-name' }, '+'));
   }
@@ -202,6 +243,8 @@ export class BoardsView {
     const bus = Packs.sdkBus();
     if (bus) this.riff.add(bus.ctx.currentTime, { pack: p.pack, cue: p.cue, params: p.params }, p.velocity, seed);
     this.updateRiffCount();
+    Stats.bump('padsHit');
+    this.jamSend({ t: 'at.hit', pack: p.pack, cue: p.cue, params: p.params || null, vel: p.velocity, seed });
     btn.classList.remove('hit'); void btn.offsetWidth; btn.classList.add('hit');
   }
 
@@ -419,6 +462,61 @@ export class BoardsView {
     Share.toast(`Playing ${hits.length} hits`, 'info', Math.min(4000, riffLength(hits) * 1000));
   }
 }
+
+// ── jam: pad hits shared with a linked device ─────────────────────────
+
+BoardsView.prototype.mountJam = function mountJam() {
+  const A = window.Arcade;
+  const peer = A && A.peer;
+  if (!peer || typeof peer.status !== 'function' || peer.status() === 'unavailable') return;
+  const sub = (name, fn) => { if (typeof peer[name] === 'function') { const u = peer[name](fn); if (typeof u === 'function') this.unsubs.push(u); } };
+  sub('onStatus', () => this.renderJam());
+  sub('onPeersChange', (roster) => { this.jamPeers = Array.isArray(roster) ? roster : []; this.renderJam(); });
+  sub('onReady', () => this.renderJam());
+  sub('onMessage', (payload, fromPeer) => this.jamReceive(payload, fromPeer));
+  this.renderJam();
+};
+
+BoardsView.prototype.renderJam = function renderJam() {
+  const A = window.Arcade; const peer = A && A.peer;
+  if (!peer || !this.jamCard) return;
+  const status = peer.status();
+  this.jamCard.hidden = status === 'unavailable';
+  if (this.jamCard.hidden) return;
+  const caps = typeof peer.caps === 'function' ? peer.caps() : [];
+  const roster = (typeof peer.peers === 'function' ? peer.peers() : this.jamPeers) || [];
+  const names = roster.map((p) => (p && p.name ? String(p.name) : 'a device')).slice(0, 6);
+  const line = status === 'connected' && names.length ? `Jamming with ${names.join(', ')} — every pad you hit plays there too, same take.`
+    : status === 'connected' ? 'Connected. Pad hits will play on the other device too.'
+    : status === 'interrupted' ? 'Link interrupted — the launcher is repairing it.'
+    : 'Nobody has this open with you yet.';
+  this.jamCard.replaceChildren(
+    el('h3', { class: 'card-h' }, 'Jam', panelHelp(PANELS.jam.title, PANELS.jam.body), el('span', { class: `jam-dot is-${status}`, 'aria-hidden': 'true' })),
+    el('p', { class: 'card-sub' }, line),
+    el('div', { class: 'row' },
+      caps.includes('peer.invite') && typeof peer.invite === 'function'
+        ? el('button', { class: 'tool', type: 'button', onclick: async () => { const n = await peer.invite(); Share.toast(n > 0 ? `Asked ${n} device${n === 1 ? '' : 's'}` : 'Connect a device from the launcher menu first', 'info', 2500); } }, 'Invite a device')
+        : el('span', { class: 'ctl-hint' }, 'Pair a device from the launcher\'s Multiplayer menu, then open Audio Tune on both.')));
+};
+
+BoardsView.prototype.jamSend = function jamSend(payload) {
+  const A = window.Arcade; const peer = A && A.peer;
+  if (!peer || typeof peer.send !== 'function') return;
+  const st = peer.status();
+  if (st !== 'connected' && st !== 'interrupted') return;
+  try { peer.send(payload); } catch (e) { /* noop */ }
+};
+
+BoardsView.prototype.jamReceive = async function jamReceive(payload, fromPeer) {
+  if (!payload || payload.t !== 'at.hit') return;
+  const pad = { pack: payload.pack, cue: payload.cue, params: payload.params && typeof payload.params === 'object' ? payload.params : null, velocity: typeof payload.vel === 'number' ? payload.vel : 1, seed: Number.isInteger(payload.seed) ? payload.seed : 1 };
+  try { checkPad(pad, { packs: Packs.list().map((p) => p.id) }, 'jam hit'); } catch (e) { return; }
+  const entry = await Packs.load(pad.pack);
+  if (entry.status !== 'ready') return;
+  Packs.fire(pad.pack, pad.cue, { params: pad.params, velocity: pad.velocity, seed: pad.seed });
+  if (!this.jamSeen) { this.jamSeen = true; Share.toast('A linked device is playing pads', 'info', 2000); }
+  void fromPeer;
+};
 
 function bedDefaults(c) {
   if (!c || !c.params) return null;

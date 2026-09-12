@@ -370,3 +370,13 @@ body {
 .layer-tools { margin-left: auto; display: inline-flex; gap: 0.25rem; }
 .layer .card-h select { font: inherit; font-weight: 600; padding: 0.25rem 0.5rem; border: 1px solid var(--line); border-radius: 0.5rem; background: var(--bg); color: var(--fg); }
 .lab-side .tool { margin-top: 0.4rem; }
+
+/* ── daily kit, jam, render ─────────────────────────────────────────── */
+
+.pack-tab.is-daily { border-left-color: hsl(300 60% 60%); }
+.pad.is-empty.is-fixed { opacity: 0.25; pointer-events: none; }
+.jam-card { margin-top: 1rem; }
+.jam-dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--line); }
+.jam-dot.is-connected { background: hsl(140 60% 50%); }
+.jam-dot.is-interrupted, .jam-dot.is-connecting { background: hsl(40 80% 55%); }
+.render-status { min-width: 6rem; }

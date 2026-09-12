@@ -10,6 +10,8 @@ import { PANELS } from '../help.js';
 import { control, panelHelp, el, fmtMs } from '../controls.js';
 import { ROOM_KNOBS, roomState } from '../lab.js';
 import * as Share from '../share.js';
+import * as Render from '../render.js';
+import * as Stats from '../stats.js';
 
 const ROOM_META = {
   dur: { kind: 'time', label: 'length', help: 'How long the tail runs before it is gone.' },
@@ -83,6 +85,7 @@ export class ComposerView {
     const dup = this.cues.find((c) => c !== this.cue && c.name === this.cue.name);
     if (dup) { this.cue.name = `${this.cue.name}-2`; }
     const ok = await Cues.save(this.cue);
+    if (ok) Stats.bump('soundsBuilt');
     this.publish();
     Share.toast(ok ? `Saved "${this.cue.name}"` : 'Could not save (no store)', ok ? 'success' : 'error');
     this.renderSide();
@@ -128,6 +131,10 @@ export class ComposerView {
         el('button', { class: 'tool', type: 'button', onpointerdown: () => { this.play(); this.holdTimer = setInterval(() => this.play(), 380); }, onpointerup: () => this.endHold(), onpointerleave: () => this.endHold(), onpointercancel: () => this.endHold() }, 'Hold'),
         el('button', { class: 'tool', type: 'button', onclick: () => this.save() }, 'Save'),
         el('button', { class: 'tool', type: 'button', onclick: async () => { const ok = await Share.copyText(code.textContent); Share.toast(ok ? 'Copied as pack code' : 'Select the code and copy it', ok ? 'success' : 'info'); } }, 'Copy as pack code'),
+        el('button', { class: 'tool', type: 'button', onclick: async () => {
+          try { const r = await Render.renderCue(Cues.PACK_ID, c.name, {}); const ch = Render.trimTail(r.channels, r.sampleRate); Render.downloadWav(Render.wavName(c.name), ch, r.sampleRate); Stats.bump('rendersMade'); }
+          catch (e) { Share.toast(`Render failed: ${e.message}`, 'error', 3000); }
+        } }, '⤓ WAV'),
         el('button', { class: 'tool', type: 'button', onclick: async () => {
           if (!(await Share.confirm(`Delete "${c.name}"?`, 'Delete'))) return;
           await Cues.remove(c.id); this.cues = this.cues.filter((x) => x.id !== c.id); this.cue = this.cues[0] || null; this.publish(); this.renderSide(); this.renderEditor();

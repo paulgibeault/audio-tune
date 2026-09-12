@@ -4,6 +4,8 @@
 import * as Packs from '../packs.js';
 import * as Rec from '../recorder.js';
 import { ComposerView } from './composer.js';
+import * as Render from '../render.js';
+import * as Stats from '../stats.js';
 import { elementControls } from '../element-ui.js';
 import { ELEMENTS, ELEMENT_NAMES, BODY_PRESETS } from '../element-params.js';
 import { CUE_PARAMS, noteFor, defaultParams } from '../cue-params.js';
@@ -187,6 +189,7 @@ export class LabView {
       el('button', { class: 'tool', type: 'button', onclick: () => this.playRecipe(true) }, 'Original'),
       el('button', { class: 'tool', type: 'button', onclick: () => this.reroll() }, '⚄ Re-roll'),
       el('button', { class: 'tool', type: 'button', onclick: () => { this.overrides = {}; this.renderRecipe(); } }, 'Reset'),
+      el('button', { class: 'tool', type: 'button', onclick: () => this.renderRecipeWav() }, '⤓ WAV'),
       el('label', { class: 'control-opt' }, el('input', { type: 'checkbox', checked: this.auditionOnChange, onchange: (e) => { this.auditionOnChange = e.target.checked; } }), el('span', {}, 'play on change')),
       el('span', { class: 'take-label' }, `take #${this.takeNo}`),
       panelHelp(PANELS.transport.title, PANELS.transport.body),
@@ -418,6 +421,25 @@ export class LabView {
     }
     if (this.refreshCode) this.refreshCode();
     this.wakeScope(this.lastDur + ((this.entry.pack.room && this.entry.pack.room.dur) || 1));
+  }
+
+  async renderRecipeWav() {
+    if (!this.cue || !this.entry) return;
+    const lib = Rec.library() || E();
+    const sampleRate = Render.SAMPLE_RATE;
+    const tail = (this.entry.pack.room && this.entry.pack.room.dur) || 1;
+    const seconds = (this.cue.sustained ? 8 : Math.max(2, (this.lastDur || 2))) + tail + 0.5;
+    try {
+      const ctx = new OfflineAudioContext(2, Math.ceil(seconds * sampleRate), sampleRate);
+      const bus = lib.createBus(ctx, ctx.destination, this.entry.pack.room);
+      const o = lib.out(bus, this.cue.send);
+      const params = this.cue.sustained ? { ...(this.cueParams || {}), dur: 8 } : this.cueParams;
+      Rec.run(() => this.cue.fn(ctx, o, 0.05, params, lib.rng(this.takeSeed)), { when: 0.05, overrides: this.overrides });
+      const buffer = await ctx.startRendering();
+      const ch = Render.trimTail([buffer.getChannelData(0), buffer.getChannelData(1)], sampleRate);
+      Render.downloadWav(Render.wavName(`${this.entry.desc.id}-${this.cueName}-take${this.takeNo}`), ch, sampleRate);
+      Stats.bump('rendersMade');
+    } catch (e) { Share.toast(`Render failed: ${e.message}`, 'error', 3000); }
   }
 
   reroll() {

@@ -234,6 +234,21 @@ Object.assign(PANELS, {
   },
 });
 
+Object.assign(PANELS, {
+  render: {
+    title: 'Render WAV',
+    body: 'Renders the song offline — same packs, same rooms, same code — and hands you a 48 kHz stereo WAV. ×4 passes loops the chain four times. Offline rendering skips the launcher\'s master compressor, so the file is the cleanest version of what you hear here.',
+  },
+  dailyKit: {
+    title: 'Daily kit',
+    body: 'Eight pads picked across the fleet from today\'s seed — everyone sees the same kit on the same day, and it changes at your local midnight. Play a riff and share the code; save a copy if you want to keep it.',
+  },
+  jam: {
+    title: 'Jam',
+    body: 'When another device has Audio Tune open with you (paired through the launcher\'s Multiplayer menu), every pad you hit is sent over with its seed, so both devices hear the same take. Hits arrive on their own time; a shared clock for the sequencer is not part of this.',
+  },
+});
+
 export const GUIDE = [
   {
     id: 'elements', title: 'Elements, cues, rooms, packs',

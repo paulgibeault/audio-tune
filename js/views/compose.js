@@ -9,6 +9,8 @@ import { CUE_PARAMS, defaultParams } from '../cue-params.js';
 import { PANELS } from '../help.js';
 import { control, panelHelp, el } from '../controls.js';
 import * as Share from '../share.js';
+import * as Render from '../render.js';
+import * as Stats from '../stats.js';
 
 const LOOKAHEAD = 0.12;   // seconds of audio scheduled ahead
 const INTERVAL = 25;      // ms between scheduler wakes
@@ -105,6 +107,7 @@ export class ComposeView {
     clearTimeout(this.saveTimer);
     if (!this.dirty || !this.store || !this.song) return;
     try { await this.store.set(this.song.id, Song.serialize(this.song)); this.dirty = false; } catch (e) { console.warn('[audio-tune] save failed:', e); }
+    if (this.song.tracks.length) { Stats.bump('songsSaved'); const r = Stats.recordLongestSong(Song.chainLength(this.song)); if (r && r.improved) Share.toast('New longest song!', 'success'); }
     const i = this.songs.findIndex((s) => s.id === this.song.id);
     if (i < 0) this.songs.unshift({ id: this.song.id, name: this.song.name, updated: this.song.updated }); else this.songs[i].name = this.song.name;
     this.renderSaved();
@@ -144,8 +147,27 @@ export class ComposeView {
         el('button', { class: 'tool', type: 'button', onclick: () => Share.downloadJson(`${this.song.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'song'}.audio-tune-song.json`, Song.compactSong(this.song)) }, 'Export file'),
         el('button', { class: 'tool', type: 'button', onclick: () => this.importSong() }, 'Import…'),
         panelHelp(PANELS.share.title, PANELS.share.body)),
+      el('div', { class: 'row' },
+        el('button', { class: 'tool', type: 'button', onclick: () => this.renderWav(1) }, '⤓ Render WAV'),
+        el('button', { class: 'tool', type: 'button', onclick: () => this.renderWav(4) }, '⤓ Render ×4 passes'),
+        el('span', { class: 'render-status ctl-hint' }),
+        panelHelp(PANELS.render.title, PANELS.render.body)),
     );
     this.renderSaved();
+  }
+
+  async renderWav(passes) {
+    if (!this.song.tracks.length) { Share.toast('Add a track first', 'info'); return; }
+    const status = this.songCard.querySelector('.render-status');
+    const say = (m) => { if (status) status.textContent = m; };
+    say('Rendering…');
+    try {
+      const r = await Render.renderSong(this.song, { passes, onProgress: (f) => say(`Rendering… ${Math.round(f * 100)}%`) });
+      const ch = Render.trimTail(r.channels, r.sampleRate);
+      Render.downloadWav(Render.wavName(`${this.song.name}${passes > 1 ? `-x${passes}` : ''}`), ch, r.sampleRate);
+      say(`${(ch[0].length / r.sampleRate).toFixed(1)} s · peak ${r.peak > 0 ? (20 * Math.log10(r.peak)).toFixed(1) : '−∞'} dBFS`);
+      Stats.bump('rendersMade');
+    } catch (e) { say(''); Share.toast(`Render failed: ${e.message}`, 'error', 3000); }
   }
 
   async shareSong() {
