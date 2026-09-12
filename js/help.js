@@ -200,6 +200,29 @@ Object.assign(PANELS, {
   },
 });
 
+Object.assign(PANELS, {
+  fleetBoard: {
+    title: 'Fleet board',
+    body: 'One pad per sound in this game\'s pack, in the pack\'s own order, played through the game\'s room. Hold a pad for its settings — the parameters the game passes, loudness, and a seed lock. "Save a copy" makes an editable board of it under My boards.',
+  },
+  myBoards: {
+    title: 'My boards',
+    body: 'Your own boards: any sound from any game on any pad, each played through its own game\'s room. Turn on Edit pads and tap a pad to give it a sound; hold a pad for its settings. Boards save themselves and ride the launcher\'s save file.',
+  },
+  padEditor: {
+    title: 'Pad',
+    body: 'Pick a game, then tap a sound to hear it and select it. A label replaces the cue name on the pad. Sounds marked ∞ are beds: they latch on and off.',
+  },
+  share: {
+    title: 'Share',
+    body: 'Share makes a code and a link (through the launcher when framed; a code on the clipboard otherwise). Send pushes the board straight to a device linked in the launcher — both sides are asked first. Export saves a file you can send any other way; Import takes a code or a file. Everything imported is checked field by field before it is kept.',
+  },
+  riff: {
+    title: 'Riff',
+    body: 'The last eight seconds of pads you hit, with their timing, loudness and seeds. Replay it, or copy it as a short code someone else can paste to hear exactly what you played — same sounds, same takes.',
+  },
+});
+
 export const GUIDE = [
   {
     id: 'elements', title: 'Elements, cues, rooms, packs',
@@ -241,7 +264,7 @@ export const GUIDE = [
   {
     id: 'keys', title: 'Keyboard',
     body: [
-      'Play: four rows of ten keys fire the board\'s pads — 1–0, Q–P, A–;, Z–/. Escape stops every bed.',
+      'Play: four rows of ten keys fire the board\'s pads — 1–0, Q–P, A–;, Z–/. Escape stops every bed. On a board of yours, Edit pads then tap a pad to change its sound.',
       'Explore: Space plays the current element or recipe. With keyboard mode on, the piano row — A W S E D F T G Y H U J K O L P ; — plays C4 up chromatically; Z and X shift the octave.',
       'Compose: Space plays and stops, R toggles record, 1–9 play the first nine tracks (and record them when recording), Escape stops.',
       'Every control is a real slider or menu underneath its picture: Tab to it, then use the arrow keys.',

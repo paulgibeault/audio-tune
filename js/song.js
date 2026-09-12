@@ -193,3 +193,48 @@ export function validateSong(x, { packs = null } = {}) {
 
 /** A plain-object copy safe to store or share. */
 export function serialize(song) { return JSON.parse(JSON.stringify(song)); }
+
+// ── compact form for share codes / config payloads ────────────────────
+// Step rows become run-length strings ("0" and velocity digits 1–9 for
+// 10–100%), tracks lose their ids (index-addressed), and the result is a
+// few hundred bytes for a typical song.
+
+export function compactSong(song) {
+  const tIndex = new Map(song.tracks.map((t, i) => [t.id, i]));
+  return {
+    v: SONG_VERSION, n: song.name, b: song.bpm, w: +song.swing.toFixed(2), s: song.stepsPerBar, r: song.bars,
+    t: song.tracks.map((t) => [t.name, t.pad.pack, t.pad.cue, t.pad.params || 0, +t.gain.toFixed(2), t.pad.seedLock ? t.pad.seed : 0]),
+    p: song.patterns.map((p) => [p.name, Object.fromEntries(Object.entries(p.steps).filter(([id]) => tIndex.has(id)).map(([id, row]) => [tIndex.get(id), row.map((v) => (v <= 0 ? '0' : String(Math.max(1, Math.min(9, Math.round(v * 9)))))).join('')]))]),
+    c: song.chain.map((c) => [song.patterns.findIndex((p) => p.id === c.pattern), c.repeat]),
+  };
+}
+
+/** Expand a compact song into a full document with fresh ids. Validate after. */
+export function expandSong(c) {
+  if (!c || typeof c !== 'object' || c.v !== SONG_VERSION) throw new Error('song: version');
+  if (!Array.isArray(c.t) || !Array.isArray(c.p) || !Array.isArray(c.c)) throw new Error('song: shape');
+  const song = { v: SONG_VERSION, id: uid('s'), name: typeof c.n === 'string' ? c.n.slice(0, 60) : 'Imported song', bpm: Number(c.b), swing: Number(c.w) || 0, stepsPerBar: Number(c.s), bars: Number(c.r), tracks: [], patterns: [], chain: [], updated: Date.now() };
+  const len = song.stepsPerBar * song.bars;
+  for (const t of c.t) {
+    if (!Array.isArray(t)) throw new Error('song: track');
+    const [name, pack, cue, params, gain, seed] = t;
+    song.tracks.push({ id: uid('t'), name: String(name).slice(0, 40), pad: { pack, cue, params: params && typeof params === 'object' ? params : null, seedLock: !!seed, seed: seed || 1 }, gain: Number(gain), mute: false, solo: false });
+  }
+  for (const p of c.p) {
+    if (!Array.isArray(p)) throw new Error('song: pattern');
+    const [name, rows] = p;
+    const pat = { id: uid('p'), name: String(name).slice(0, 12), steps: {} };
+    if (rows && typeof rows === 'object') for (const [idx, str] of Object.entries(rows)) {
+      const track = song.tracks[Number(idx)];
+      if (!track || typeof str !== 'string' || str.length !== len) throw new Error('song: step row');
+      pat.steps[track.id] = [...str].map((ch) => (ch === '0' ? 0 : Math.max(0, Math.min(1, Number(ch) / 9))));
+    }
+    song.patterns.push(pat);
+  }
+  for (const ch of c.c) {
+    if (!Array.isArray(ch) || !song.patterns[ch[0]]) throw new Error('song: chain');
+    song.chain.push({ pattern: song.patterns[ch[0]].id, repeat: Number(ch[1]) });
+  }
+  if (!song.chain.length) song.chain = [{ pattern: song.patterns[0].id, repeat: 1 }];
+  return song;
+}

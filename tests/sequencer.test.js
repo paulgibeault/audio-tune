@@ -135,3 +135,29 @@ test('spec-voice layout follows the SDK sequence semantics', () => {
   assert.equal(layout({}).at(0).dur, 0.15, 'default dur');
   assert.equal(layout({ dur: 99 })[0].dur, 30, 'clamped');
 });
+
+test('compactSong / expandSong round-trip a song into a few hundred bytes', () => {
+  const s = Song.newSong({ name: 'Loop', bpm: 120 });
+  const t1 = Song.addTrack(s, Song.newTrack({ pack: 'moon-lit', cue: 'menu-click', params: null }, 'clapper'));
+  const t2 = Song.addTrack(s, Song.newTrack({ pack: 'hecknsic', cue: 'match', params: { count: 5 } }, 'glass'));
+  t2.pad.seedLock = true; t2.pad.seed = 77; t2.gain = 0.5;
+  const b = Song.addPattern(s);
+  for (const i of [0, 4, 8, 12]) Song.toggleStep(s, s.patterns[0], t1.id, i, 1);
+  Song.setStep(s, b, t2.id, 2, 0.6);
+  s.chain = [{ pattern: s.patterns[0].id, repeat: 2 }, { pattern: b.id, repeat: 1 }];
+  const c = Song.compactSong(s);
+  assert.ok(JSON.stringify(c).length < 400, `compact ${JSON.stringify(c).length} bytes`);
+  assert.equal(c.p[0][1][0], '9000900090009000', 'full loudness is digit 9');
+  assert.equal(c.p[1][1][1][2], '5', '0.6 → digit 5 of 9');
+  const back = Song.expandSong(c);
+  assert.equal(Song.validateSong(back, { packs: ['moon-lit', 'hecknsic'] }), true);
+  assert.equal(back.tracks[1].pad.seedLock, true);
+  assert.equal(back.tracks[1].pad.seed, 77);
+  assert.deepEqual(back.tracks[1].pad.params, { count: 5 });
+  assert.deepEqual(back.patterns[0].steps[back.tracks[0].id].map((v) => (v > 0 ? 1 : 0)), [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]);
+  assert.ok(Math.abs(back.patterns[1].steps[back.tracks[1].id][2] - 5 / 9) < 1e-9);
+  assert.equal(back.chain[0].repeat, 2);
+  assert.equal(back.chain[1].pattern, back.patterns[1].id);
+  assert.throws(() => Song.expandSong({ v: 1, t: [], p: [['A', { 0: 'x' }]], c: [] }), /step row/);
+  assert.throws(() => Song.expandSong({ v: 1, t: [], p: [], c: [[3, 1]] }), /chain/);
+});

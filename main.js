@@ -10,6 +10,9 @@ import { BoardsView } from './js/views/boards.js';
 import { LabView } from './js/views/lab.js';
 import { ComposeView } from './js/views/compose.js';
 import * as Recorder from './js/recorder.js';
+import * as Boards from './js/boards-store.js';
+import * as Song from './js/song.js';
+import { toast } from './js/share.js';
 
 // The recorder wraps the element library so Explore can read a cue's recipe
 // (docs/explore-design.md). Packs capture the library at load, so this must
@@ -94,6 +97,28 @@ async function boot() {
   document.querySelectorAll('.tab').forEach((t) => {
     t.addEventListener('click', () => show(t.dataset.view));
   });
+
+  // Configs pushed by a linked device or opened from a link can arrive before
+  // a view is mounted, so they land in the stores here and the views re-read.
+  if (Arcade.configs && typeof Arcade.configs.register === 'function') {
+    Arcade.configs.register('board', async ({ data }) => {
+      try {
+        const b = await Boards.importCompact(data, { packs: Packs.list().map((p) => p.id) });
+        toast(`Board "${b.name}" received — find it under Play`, 'success', 3000);
+        if (currentName === 'play') { const n = currentName; currentName = null; show(n); }
+      } catch (e) { toast(`A board arrived but was rejected: ${e.message}`, 'error', 3000); }
+    });
+    Arcade.configs.register('song', async ({ data }) => {
+      try {
+        const song = Song.expandSong(data);
+        Song.validateSong(song, { packs: Packs.list().map((p) => p.id) });
+        const store = Arcade.store.open('songs');
+        await store.set(song.id, song);
+        toast(`Song "${song.name}" received — find it under Compose`, 'success', 3000);
+        if (currentName === 'compose') { const n = currentName; currentName = null; show(n); }
+      } catch (e) { toast(`A song arrived but was rejected: ${e.message}`, 'error', 3000); }
+    });
+  }
 
   Arcade.onSuspend(() => { if (current && current.stopAllBeds) current.stopAllBeds(0.2); });
   Arcade.onSettingsChange(() => {

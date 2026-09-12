@@ -347,3 +347,20 @@ body {
 .seq-cell.is-on.is-playhead .seq-fill { filter: brightness(1.3); }
 .picker { margin-top: 0.75rem; }
 @media (prefers-reduced-motion: reduce) { .seq-fill { transition: none; } }
+
+/* ── my boards, import, riff ────────────────────────────────────────── */
+
+.tab-sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 0.2rem; flex: none; }
+.pack-tab.is-mine { border-left-color: hsl(48 80% 55%); }
+.pack-tab.is-new { border-left-width: 1px; color: var(--muted); }
+.pad.is-empty { border-style: dashed; background: transparent; color: var(--muted); justify-content: center; align-items: center; font-size: 1.4rem; }
+.pads.is-editing .pad { outline: 2px dashed hsl(var(--hue) 60% 55% / 0.5); outline-offset: -4px; cursor: cell; }
+.pad.is-missing { opacity: 0.45; }
+.sheet-wide { width: min(38rem, calc(100vw - 2rem)); }
+.cue-grid { display: flex; flex-wrap: wrap; gap: 0.35rem; max-height: 14rem; overflow-y: auto; padding: 0.25rem 0; }
+.cue-chip { font: inherit; font-size: 0.85rem; padding: 0.35rem 0.7rem; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--fg); cursor: pointer; }
+.cue-chip:hover { border-color: var(--accent); }
+.cue-chip.is-picked { background: hsl(var(--hue) var(--pad-s) var(--pad-l)); border-color: var(--accent); font-weight: 600; }
+.code-in { font: 0.8rem ui-monospace, SFMono-Regular, Menlo, monospace; padding: 0.5rem; border: 1px solid var(--line); border-radius: 0.5rem; background: var(--bg); color: var(--fg); width: 100%; resize: vertical; }
+.riff-card { margin-top: 1rem; }
+.riff-card .card-h .ctl-hint { margin-left: auto; font-weight: 400; }

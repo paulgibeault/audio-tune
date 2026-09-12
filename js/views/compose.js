@@ -8,6 +8,7 @@ import { makeClock, advance, nearestStep, stepSeconds } from '../scheduler.js';
 import { CUE_PARAMS, defaultParams } from '../cue-params.js';
 import { PANELS } from '../help.js';
 import { control, panelHelp, el } from '../controls.js';
+import * as Share from '../share.js';
 
 const LOOKAHEAD = 0.12;   // seconds of audio scheduled ahead
 const INTERVAL = 25;      // ms between scheduler wakes
@@ -137,8 +138,44 @@ export class ComposeView {
           if (this.songs[0]) await this.loadSong(this.songs[0].id); else this.setSong(Song.newSong({ name: 'First song' }));
         } }, 'Delete'),
         undo, redo),
+      el('div', { class: 'row' },
+        el('button', { class: 'tool', type: 'button', onclick: () => this.shareSong() }, 'Share'),
+        Share.configsAvailable() ? el('button', { class: 'tool', type: 'button', onclick: async () => { const r = await Share.sendConfig('song', Song.compactSong(this.song)); Share.toast(r.ok ? (r.sent ? 'Sent' : 'Nobody to send to yet — connect a device from the launcher menu') : 'Could not send', r.ok ? 'info' : 'error'); } }, 'Send to device') : null,
+        el('button', { class: 'tool', type: 'button', onclick: () => Share.downloadJson(`${this.song.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'song'}.audio-tune-song.json`, Song.compactSong(this.song)) }, 'Export file'),
+        el('button', { class: 'tool', type: 'button', onclick: () => this.importSong() }, 'Import…'),
+        panelHelp(PANELS.share.title, PANELS.share.body)),
     );
     this.renderSaved();
+  }
+
+  async shareSong() {
+    const data = Song.compactSong(this.song);
+    if (Share.byteLength(data) > 8000) { Share.toast('This song is too big for a code — use Export file', 'info', 2500); return; }
+    if (Share.configsAvailable()) { const r = await Share.shareConfig('song', data); if (r.ok) return; }
+    const ok = await Share.copyText(Share.encodeCode(data, 1));
+    Share.toast(ok ? 'Song code copied — paste it into Import' : 'Could not copy; use Export file', ok ? 'success' : 'error');
+  }
+
+  importSong() {
+    const dlg = el('dialog', { class: 'sheet', 'aria-label': 'Import a song' });
+    const codeIn = el('textarea', { class: 'code-in', rows: 3, placeholder: 'Paste a song code…', 'aria-label': 'code' });
+    const take = async (obj) => {
+      try {
+        const song = Song.expandSong(obj);
+        Song.validateSong(song, { packs: Packs.list().map((p) => p.id) });
+        await this.flushSave();
+        this.setSong(song); this.scheduleSave();
+        Share.toast(`Imported "${song.name}"`, 'success');
+      } catch (e) { Share.toast(`Could not import: ${e.message}`, 'error', 2500); }
+    };
+    dlg.append(el('div', { class: 'sheet-body' },
+      el('h3', { class: 'sheet-title' }, 'Import a song'), codeIn,
+      el('div', { class: 'sheet-actions' },
+        el('button', { class: 'tool', type: 'button', onclick: async () => { const obj = await Share.openJson(); if (obj) { dlg.close(); take(obj); } } }, 'Open file…'),
+        el('button', { class: 'tool tool-primary', type: 'button', onclick: () => { const d = Share.decodeCode(codeIn.value); dlg.close(); if (!d) { Share.toast('That is not a code we understand', 'error'); return; } take(d.data); } }, 'Import code'),
+        el('button', { class: 'tool', type: 'button', onclick: () => dlg.close() }, 'Cancel'))));
+    dlg.addEventListener('close', () => dlg.remove());
+    document.body.append(dlg); dlg.showModal();
   }
 
   renderTransport() {
