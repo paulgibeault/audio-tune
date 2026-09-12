@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Audio Tune icon">
+  <rect width="512" height="512" rx="96" fill="#181622"/>
+  <rect x="64" y="64" width="128" height="128" rx="26" fill="#ff7850"/>
+  <rect x="214" y="64" width="128" height="128" rx="26" fill="#3a374e"/>
+  <rect x="364" y="64" width="128" height="128" rx="26" fill="#ffcd5a"/>
+  <rect x="64" y="214" width="128" height="128" rx="26" fill="#3a374e"/>
+  <rect x="214" y="214" width="128" height="128" rx="26" fill="#78dcb4"/>
+  <rect x="364" y="214" width="128" height="128" rx="26" fill="#78aaff"/>
+  <rect x="64" y="364" width="128" height="128" rx="26" fill="#3a374e"/>
+  <rect x="214" y="364" width="128" height="128" rx="26" fill="#3a374e"/>
+  <rect x="364" y="364" width="128" height="128" rx="26" fill="#3a374e"/>
+</svg>

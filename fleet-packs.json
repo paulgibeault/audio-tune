@@ -1,0 +1,63 @@
+{
+  "v": 1,
+  "packs": [
+    {
+      "id": "moon-lit", "name": "Moon Lit", "kind": "graph",
+      "url": "/moon-lit/js/soundpack.js", "hue": 226,
+      "place": "A quiet tropical pond on a warm summer night. Paper, rope, wood, bronze, silk strings.",
+      "beds": {
+        "ambient": { "send": 0.45 },
+        "insects": { "send": 0.55, "params": { "heat": [0, 1, 0.01, 0] } }
+      }
+    },
+    {
+      "id": "cozy-solitaire", "name": "Cozy Solitaire", "kind": "graph",
+      "url": "/cozy-solitaire/js/soundpack.js", "hue": 28,
+      "place": "A small, warm, wood-panelled card room: worn felt, a low lamp, nobody in a hurry."
+    },
+    {
+      "id": "sowduku", "name": "Sowdoku", "kind": "graph", "packName": "sow-duku",
+      "url": "/sowduku/js/soundpack.js", "hue": 340,
+      "place": "A small farmyard pen after rain. Mud, straw, small warm animals — and not one note of music."
+    },
+    {
+      "id": "hecknsic", "name": "HecknSic", "kind": "graph",
+      "url": "/hecknsic/js/soundpack.js", "hue": 280,
+      "place": "A dark room with a glass machine in it. Everything destructive shatters; everything formed rings.",
+      "beds": {
+        "pulse":   { "send": 0.30, "params": { "intensity": [0, 1, 0.01, 0.4] } },
+        "tension": { "send": 0.35, "params": { "urgency":   [0, 1, 0.01, 0.5] } }
+      }
+    },
+    {
+      "id": "si-syn", "name": "Si Syndicate", "kind": "graph",
+      "url": "/si-syn/js/soundpack.js", "hue": 170,
+      "place": "A person at a workbench with a scope and a rack of relays. Every sound is hardware."
+    },
+    {
+      "id": "p2p-chat", "name": "P2P Chat", "kind": "graph",
+      "url": "/p2p-chat/js/soundpack.js", "hue": 200,
+      "place": "Sonar. Peers appear and vanish off a local scope; the tail is distance."
+    },
+    {
+      "id": "shuiguo", "name": "shuǐ guǒ tān", "kind": "graph",
+      "url": "/shuiguo/js/soundpack.js", "hue": 8,
+      "place": "A wooden fruit stand under an awning at midday. Wood, and water in skin."
+    },
+    {
+      "id": "cardstock", "name": "Cardstock", "kind": "graph",
+      "url": "/cardstock/js/soundpack.js", "hue": 120,
+      "place": "Four players around a plainer, larger table. Distance is the whole design."
+    },
+    {
+      "id": "grav-well", "name": "Gravity Well", "kind": "graph",
+      "url": "/grav-well/js/soundpack.js", "hue": 250,
+      "place": "A stone cistern forty rows deep, with a starfield at the bottom of it."
+    },
+    {
+      "id": "pi-game", "name": "Pi Game", "kind": "spec",
+      "url": "/pi-game/audio/chiptune-archive.mjs", "hue": 350,
+      "place": "A recital under pressure: a metronome tick under your concentration, and an alarm."
+    }
+  ]
+}

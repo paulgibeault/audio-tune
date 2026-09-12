@@ -1,0 +1,14 @@
+{
+  "name": "Audio Tune",
+  "short_name": "Audio Tune",
+  "description": "Every sound in Paul's Arcade, on one grid: a soundboard, a sound lab and a sequencer built on the fleet's shipped sound packs.",
+  "scope": "/audio-tune/",
+  "start_url": "/audio-tune/",
+  "display": "standalone",
+  "background_color": "#181622",
+  "theme_color": "#181622",
+  "icons": [
+    { "src": "icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

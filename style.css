@@ -1,0 +1,149 @@
+/* Audio Tune — chrome around the pads.
+ *
+ * Text in rem so the SDK's --font-scale hook scales everything for free;
+ * colours key off [data-theme], which the SDK maintains on <html>. Each board
+ * sets --hue on the view; pads derive their colour from it, so a board reads
+ * as one place. */
+
+:root {
+  --font-scale: 1;
+  --bg: #f3f0ea;
+  --fg: #221f2b;
+  --muted: rgba(34, 31, 43, 0.62);
+  --card: #ffffff;
+  --line: rgba(34, 31, 43, 0.12);
+  --hue: 250;
+  --pad-l: 88%;
+  --pad-l-hover: 82%;
+  --pad-s: 45%;
+  --pad-ink: #221f2b;
+  --accent: hsl(var(--hue) 60% 45%);
+}
+:root[data-theme="dark"] {
+  --bg: #181622;
+  --fg: #ece8f4;
+  --muted: rgba(236, 232, 244, 0.6);
+  --card: #221f2e;
+  --line: rgba(236, 232, 244, 0.12);
+  --pad-l: 22%;
+  --pad-l-hover: 28%;
+  --pad-s: 35%;
+  --pad-ink: #ece8f4;
+  --accent: hsl(var(--hue) 70% 68%);
+}
+
+* { box-sizing: border-box; }
+html { font-size: calc(100% * var(--font-scale)); }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app { max-width: 64rem; margin: 0 auto; padding: 0.75rem 0.75rem 3rem; }
+
+.topbar {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 1rem;
+  flex-wrap: wrap; padding: 0.25rem 0.25rem 0.75rem;
+}
+.brand { margin: 0; font-size: 1.25rem; letter-spacing: 0.02em; }
+
+.tabs { display: flex; gap: 0.25rem; }
+.tab {
+  font: inherit; font-size: 0.9rem; padding: 0.4rem 0.9rem; border: 1px solid var(--line);
+  border-radius: 999px; background: transparent; color: var(--fg); cursor: pointer;
+}
+.tab[aria-selected="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+
+.hint { font-size: 0.85rem; color: var(--muted); }
+
+/* ── boards ─────────────────────────────────────────────────────────── */
+
+.packs { display: flex; gap: 0.4rem; overflow-x: auto; padding: 0.25rem 0.25rem 0.75rem; scrollbar-width: thin; }
+.pack-tab {
+  font: inherit; font-size: 0.85rem; white-space: nowrap; padding: 0.35rem 0.8rem;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--fg);
+  cursor: pointer; border-left: 0.35rem solid hsl(var(--hue) 60% 55%);
+}
+.pack-tab[aria-selected="true"] { background: hsl(var(--hue) var(--pad-s) var(--pad-l)); border-color: hsl(var(--hue) 60% 55%); }
+
+.board-head { padding: 0.25rem 0.25rem 0.75rem; }
+.board-name { margin: 0; font-size: 1.4rem; }
+.board-place { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.95rem; max-width: 40rem; }
+.board-status { margin: 0.5rem 0 0; font-size: 0.9rem; color: var(--muted); }
+.board-status.is-error { color: #c8433c; }
+.board-tools { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.6rem; }
+.tool {
+  font: inherit; font-size: 0.85rem; padding: 0.4rem 0.8rem; border: 1px solid var(--line);
+  border-radius: 0.5rem; background: var(--card); color: var(--fg); cursor: pointer;
+}
+.tool-primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.tool-hint { font-size: 0.8rem; color: var(--muted); }
+
+.pads {
+  display: grid; gap: 0.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+}
+.pad {
+  position: relative; min-height: 5.25rem; padding: 0.5rem 0.55rem;
+  display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; gap: 0.15rem;
+  font: inherit; text-align: left; cursor: pointer; user-select: none; touch-action: manipulation;
+  border: 1px solid hsl(var(--hue) 40% 50% / 0.35); border-radius: 0.8rem;
+  background: hsl(var(--hue) var(--pad-s) var(--pad-l)); color: var(--pad-ink);
+  transition: transform 0.06s ease, background-color 0.12s ease, box-shadow 0.12s ease;
+}
+.pad:hover { background: hsl(var(--hue) var(--pad-s) var(--pad-l-hover)); }
+.pad:active { transform: scale(0.96); }
+.pad:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.pad-key {
+  position: absolute; top: 0.4rem; right: 0.5rem; font-size: 0.7rem; opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}
+.pad-name { font-weight: 600; font-size: 0.95rem; line-height: 1.15; word-break: break-word; }
+.pad-meta { font-size: 0.7rem; opacity: 0.6; min-height: 0.9rem; }
+.pad.is-bed { border-style: dashed; }
+.pad.is-live { box-shadow: 0 0 0 3px var(--accent) inset; }
+.pad.has-params::after {
+  content: ""; position: absolute; left: 0.55rem; top: 0.55rem; width: 0.4rem; height: 0.4rem;
+  border-radius: 50%; background: var(--accent);
+}
+
+/* The hit flash: a finite pulse, one iteration, so it says "that one fired"
+ * and then rests. Reduced motion collapses it via the SDK's kill switch. */
+.pad.hit { animation: pad-hit 0.28s ease-out; animation-iteration-count: 1; }
+@keyframes pad-hit {
+  0%   { box-shadow: 0 0 0 0 hsl(var(--hue) 80% 60% / 0.9); }
+  100% { box-shadow: 0 0 0 0.9rem hsl(var(--hue) 80% 60% / 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pad, .tab { transition: none; }
+  .pad:active { transform: none; }
+}
+
+/* ── pad sheet ──────────────────────────────────────────────────────── */
+
+.sheet {
+  border: 1px solid var(--line); border-radius: 1rem; padding: 0; background: var(--card); color: var(--fg);
+  width: min(26rem, calc(100vw - 2rem));
+}
+.sheet::backdrop { background: rgba(0, 0, 0, 0.45); }
+.sheet-body { padding: 1rem 1.1rem 1.1rem; display: flex; flex-direction: column; gap: 0.7rem; }
+.sheet-title { margin: 0; font-size: 1.15rem; }
+.sheet-title small { font-weight: 400; color: var(--muted); font-size: 0.85rem; }
+.sheet-note { margin: 0; color: var(--muted); font-size: 0.9rem; }
+.ctl { display: grid; grid-template-columns: 6rem 1fr 3rem; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
+.ctl-name { font-variant: small-caps; letter-spacing: 0.03em; }
+.ctl input[type="range"] { width: 100%; accent-color: var(--accent); }
+.ctl output { text-align: right; font-variant-numeric: tabular-nums; }
+.ctl select, .ctl-row input[type="number"] {
+  font: inherit; padding: 0.3rem 0.4rem; border: 1px solid var(--line); border-radius: 0.4rem;
+  background: var(--bg); color: var(--fg);
+}
+.ctl-check { display: flex; gap: 0.5rem; }
+.ctl-row { display: grid; grid-template-columns: auto 6rem; gap: 0.5rem 0.75rem; align-items: center; font-size: 0.9rem; }
+.ctl-row input[type="number"] { width: 6rem; }
+.ctl-hint { grid-column: 1 / -1; font-size: 0.8rem; color: var(--muted); }
+.sheet-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.3rem; }

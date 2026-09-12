@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Audio Tune</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.png" type="image/png">
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Arcade SDK — root-relative EVERGREEN alias (/arcade-sdk.js): the fleet
+       posture is that every app follows the alias and a breaking major ships
+       as one coordinated migration (GAME_INTEGRATION.md §2). -->
+  <script src="/arcade-sdk.js"></script>
+  <script>Arcade.init({ gameId: 'audio-tune' });</script>
+
+  <!-- The element library, ALSO evergreen. This app plays every fleet pack,
+       and any pack may use the newest gesture, so the board must always have
+       the newest library. There is deliberately no js/soundpack.js of our own:
+       the pads are the sound (docs/soundboard-plan-2026-09.md §3.5). -->
+  <script src="/arcade-audio.js"></script>
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="topbar">
+      <h1 class="brand">Audio Tune</h1>
+      <nav class="tabs" role="tablist" aria-label="Sections">
+        <button class="tab" role="tab" data-view="play" aria-selected="true" type="button">Play</button>
+        <button class="tab" role="tab" data-view="explore" aria-selected="false" type="button">Explore</button>
+        <button class="tab" role="tab" data-view="compose" aria-selected="false" type="button">Compose</button>
+      </nav>
+    </header>
+
+    <main class="view" id="view" aria-live="polite"></main>
+
+    <p class="hint" id="context" hidden></p>
+  </div>
+
+  <script type="module" src="main.js"></script>
+
+  <!-- Service worker for offline play. Loopback-guarded so local edits are
+       never masked by a stale cache (matches the launcher). Its fetch handler
+       is scoped to /audio-tune/, so the fleet packs this app loads from other
+       apps' paths are never cached here — a pack must always be the game's
+       current one. -->
+  <script>
+    if ('serviceWorker' in navigator &&
+        !/^(127\.|localhost$|0\.0\.0\.0$|::1$)/.test(location.hostname)) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js', { scope: '/audio-tune/' })
+          .catch((err) => console.warn('SW registration failed:', err));
+      });
+    }
+  </script>
+</body>
+</html>

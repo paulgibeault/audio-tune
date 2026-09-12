@@ -1,0 +1,6 @@
+node_modules/
+.arcade-stage/
+.dev-stage/
+audio/out/
+*.pid
+.DS_Store
