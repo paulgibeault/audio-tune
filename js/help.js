@@ -223,6 +223,17 @@ Object.assign(PANELS, {
   },
 });
 
+Object.assign(PANELS, {
+  mySounds: {
+    title: 'My sounds',
+    body: 'Sounds you build here become a pack of their own. Every one is a pad on any board and a track in any song, played through the My sounds room, and its code pastes straight into a game\'s js/soundpack.js.',
+  },
+  composer: {
+    title: 'Build a sound',
+    body: 'A sound is a few gestures at offsets — a strike a few milliseconds before a body is a knock; a squelch under a thump is a piggy in mud. Each layer has the gesture\'s own controls plus how much it may vary per play. The name is the cue name: lowercase, digits, dashes.',
+  },
+});
+
 export const GUIDE = [
   {
     id: 'elements', title: 'Elements, cues, rooms, packs',
@@ -251,6 +262,13 @@ export const GUIDE = [
     body: [
       'Pick a fleet sound, tweak it until it is yours, and copy the pack code. It is a cue function in the fleet\'s exact shape: paste it into a game\'s js/soundpack.js, register it, and the launcher\'s offline renderer (tools/soundpack/) will render an audition of it with the same element library you just heard.',
       'Where the code says "varies per play", replace the literal with a draw from the stream — S.between(r, lo, hi) for a range, f0 * S.cents(r, 15) for a pitch — so your cue varies the way the fleet\'s do.',
+    ],
+  },
+  {
+    id: 'build', title: 'Building a sound',
+    body: [
+      'Explore › My sounds is where a sound that does not exist yet gets made. Add gestures as layers, set each one\'s offset on the timeline, and shape it with the same controls the fleet recipes use. Give every layer a little variation — a few cents of pitch, a little level — so no two plays are identical, the way the fleet\'s cues work.',
+      'A saved sound is a cue in the My sounds pack: pick "My sounds" as the game when you assign a pad or add a track. Copy as pack code gives you the same cue in the fleet\'s shape; drop it into a game\'s js/soundpack.js and it will play there and render in the offline audition.',
     ],
   },
   {

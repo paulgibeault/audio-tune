@@ -3,6 +3,8 @@
 
 import * as Packs from '../packs.js';
 import * as Rec from '../recorder.js';
+import { ComposerView } from './composer.js';
+import { elementControls } from '../element-ui.js';
 import { ELEMENTS, ELEMENT_NAMES, BODY_PRESETS } from '../element-params.js';
 import { CUE_PARAMS, noteFor, defaultParams } from '../cue-params.js';
 import { kindOf, pairFor } from '../param-kinds.js';
@@ -61,6 +63,7 @@ export class LabView {
   unmount() {
     document.removeEventListener('keydown', this.onKey);
     this.stopAllBeds(0.3);
+    if (this.composer) { this.composer.unmount(); this.composer = null; }
     if (this.loop) { this.loop.dispose(); this.loop = null; }
     if (this.labOut) { try { this.labOut.disconnect(); } catch (e) { /* noop */ } }
     if (this.analyser) { try { this.analyser.disconnect(); } catch (e) { /* noop */ } }
@@ -70,16 +73,18 @@ export class LabView {
   stopAllBeds(fade) { for (const h of this.beds) h.stop(fade); this.beds = []; }
 
   renderTabs() {
-    const T = [['fleet', 'Fleet sounds'], ['elements', 'Elements'], ['guide', 'Guide']];
+    const T = [['fleet', 'Fleet sounds'], ['elements', 'Elements'], ['mine', 'My sounds'], ['guide', 'Guide']];
     this.tabs.replaceChildren(...T.map(([id, label]) => el('button', { class: 'subtab', role: 'tab', type: 'button', 'aria-selected': String(id === this.tab), onclick: () => this.showTab(id) }, label)));
   }
 
   showTab(id) {
     this.tab = id; this.prefs.set('labTab', id); this.renderTabs();
     this.stopAllBeds(0.3);
+    if (this.composer) { this.composer.unmount(); this.composer = null; }
     this.body.replaceChildren();
     if (id === 'fleet') this.renderFleet();
     else if (id === 'elements') this.renderElements();
+    else if (id === 'mine') { this.composer = new ComposerView(this.body, { prefs: this.prefs, wakeScope: (s) => this.wakeScope(s) }); this.composer.mount(); }
     else this.renderGuide();
   }
 
@@ -455,64 +460,8 @@ export class LabView {
     const name = this.element, def = ELEMENTS[name], st = this.knobs();
     const code = el('pre', { class: 'lab-code', tabindex: '0', 'aria-label': 'pack code' });
     const refreshCode = () => { code.textContent = snippet(name, st, { vary: this.vary, cents: this.vary ? this.cents : 0, seed: this.seed }); };
-    const grid = el('div', { class: 'controls' });
-    const done = new Set();
-    const change = (k, v) => { st[k] = v; refreshCode(); if (this.auditionOnChange) { clearTimeout(this.playTimer); this.playTimer = setTimeout(() => this.play(0), 140); } };
-    for (const [k, d] of Object.entries(def.params)) {
-      if (done.has(k)) continue;
-      const pair = pairFor(name, k);
-      const help = paramHelp(name, k);
-      if (pair && pair.kind === 'sweep') {
-        done.add(pair.a); done.add(pair.b);
-        grid.append(control({ kind: 'sweep', name: `${pair.a}-${pair.b}`, label: `${pair.a} → ${pair.b}`, values: { from: st[pair.a], to: st[pair.b] },
-          ranges: { from: def.params[pair.a].slice(0, 3), to: def.params[pair.b].slice(0, 3) }, help: `${paramHelp(name, pair.a)} ${paramHelp(name, pair.b)}`,
-          onChange: ({ from, to }) => { st[pair.a] = from; change(pair.b, to); } }));
-        continue;
-      }
-      if (pair && pair.kind === 'envelope') {
-        done.add(pair.a); done.add(pair.b);
-        grid.append(control({ kind: 'envelope', name: `${pair.a}-${pair.b}`, label: `${pair.a} · ${pair.b}`, values: { attack: st[pair.a], dur: st[pair.b] },
-          ranges: { attack: def.params[pair.a].slice(0, 3), dur: def.params[pair.b].slice(0, 3) }, help: `${paramHelp(name, pair.a)} ${paramHelp(name, pair.b)}`,
-          onChange: ({ attack, dur }) => { st[pair.a] = attack; change(pair.b, dur); } }));
-        continue;
-      }
-      done.add(k);
-      const meta = kindOf(name, k);
-      const base = { name: k, label: meta.label || k, help, onChange: (v) => change(k, v) };
-      if (Array.isArray(d)) {
-        const range = d.slice(0, 3);
-        switch (meta.kind) {
-          case 'pitch': grid.append(control({ ...base, kind: 'pitch', value: st[k], range })); break;
-          case 'filter': grid.append(control({ ...base, kind: 'filter', filter: meta.filter, value: st[k], range })); break;
-          case 'gain': grid.append(control({ ...base, kind: 'gain', value: st[k], range })); break;
-          case 'time': grid.append(control({ ...base, kind: 'time', value: st[k], range })); break;
-          case 'count': grid.append(control({ ...base, kind: 'count', value: st[k], range })); break;
-          case 'character': grid.append(control({ ...base, kind: 'character', value: st[k], range, poles: meta.poles, unit: meta.unit, center: k === 'end' || k === 'bend' ? 1 : undefined })); break;
-          default: grid.append(control({ ...base, kind: 'number', value: st[k], range }));
-        }
-      } else if (d.range) {
-        // optional: a switch plus the control
-        const wrap = el('div', { class: 'optional' });
-        const on = st[k] !== d.off;
-        const inner = () => {
-          const range = d.range;
-          const val = st[k] === d.off ? (meta.kind === 'filter' ? Math.sqrt(range[0] * range[1]) : (range[0] + range[1]) / 2) : st[k];
-          if (meta.kind === 'filter') return control({ ...base, kind: 'filter', filter: meta.filter, value: val, range });
-          if (meta.kind === 'pitch') return control({ ...base, kind: 'pitch', value: val, range });
-          return control({ ...base, kind: 'character', value: val, range, poles: meta.poles, unit: meta.unit, center: k === 'bend' ? 1 : undefined });
-        };
-        let ctl = on ? inner() : null;
-        const sw = control({ kind: 'toggle', name: `${k}-on`, label: `${meta.label || k} (optional)`, value: on, help: `${help} Off leaves it to the library's default behaviour.`,
-          onChange: (v) => { if (v) { ctl = inner(); wrap.append(ctl); change(k, ctl.value); } else { if (ctl) ctl.remove(); ctl = null; change(k, d.off); } } });
-        wrap.append(sw); if (ctl) wrap.append(ctl);
-        grid.append(wrap);
-      } else if (d.options) {
-        grid.append(control({ ...base, kind: 'choice', value: st[k], options: d.options }));
-      } else if (d.preset) {
-        const list = BODY_PRESETS[st[k]] || BODY_PRESETS[d.preset[0]];
-        grid.append(control({ ...base, kind: 'partials', value: list, presets: BODY_PRESETS, onChange: (v) => { st[k] = v; refreshCode(); if (this.auditionOnChange) this.play(0); } }));
-      }
-    }
+    const change = (k, v) => { refreshCode(); if (this.auditionOnChange) { clearTimeout(this.playTimer); this.playTimer = setTimeout(() => this.play(0), 140); } };
+    const grid = elementControls(name, st, change);
     const kbBox = el('input', { type: 'checkbox', checked: this.keyboard, disabled: !def.pitched, onchange: (e) => { this.keyboard = e.target.checked; kbHint.hidden = !this.keyboard; } });
     const kbHint = el('p', { class: 'ctl-hint', hidden: !this.keyboard }, 'A W S E D F T G Y H U J K O L P ; play C4 up from the current pitch; Z / X shift the octave.');
     const varyBox = el('input', { type: 'checkbox', checked: this.vary, onchange: (e) => { this.vary = e.target.checked; refreshCode(); } });

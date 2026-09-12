@@ -13,6 +13,8 @@ import * as Recorder from './js/recorder.js';
 import * as Boards from './js/boards-store.js';
 import * as Song from './js/song.js';
 import { toast } from './js/share.js';
+import * as Cues from './js/user-cues.js';
+import { BODY_PRESETS } from './js/element-params.js';
 
 // The recorder wraps the element library so Explore can read a cue's recipe
 // (docs/explore-design.md). Packs capture the library at load, so this must
@@ -88,6 +90,15 @@ async function boot() {
     ctx.hidden = false;
     ctx.textContent = `Could not read the fleet manifest: ${err.message}`;
     return;
+  }
+
+  // The user's own sounds are a pack too, so boards and songs can use them
+  // before Explore has ever been opened.
+  if (Packs.available()) {
+    try {
+      const { cues, room } = await Cues.list();
+      Packs.registerVirtual(Cues.PACK_DESC, Cues.buildPack(cues, room, window.ArcadeAudioElements, BODY_PRESETS));
+    } catch (err) { console.warn('[audio-tune] my sounds:', err); }
   }
 
   // Build the SDK bus on the first gesture anywhere, so the compressor's

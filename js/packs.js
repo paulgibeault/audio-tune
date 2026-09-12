@@ -42,6 +42,21 @@ export function list() {
   return [...registry.values()].map((e) => ({ ...e.desc, status: e.status, error: e.error }));
 }
 
+/**
+ * Publish a pack built in the page (the user's own sounds) as if it had
+ * loaded from a file. Re-registering replaces the cues; `roomChanged`
+ * drops the pack's bus so the next play rebuilds the room.
+ */
+export function registerVirtual(desc, packObject, { roomChanged = false } = {}) {
+  const pack = normaliseGraphPack(packObject, { id: desc.id, packName: packObject.name });
+  let entry = registry.get(desc.id);
+  if (!entry) { entry = { desc, status: 'ready', pack: null, bus: null, error: null, promise: null }; registry.set(desc.id, entry); }
+  entry.pack = pack; entry.status = 'ready'; entry.error = null;
+  entry.promise = Promise.resolve(entry);
+  if (roomChanged && entry.bus) { try { entry.bus.dry.disconnect(); entry.bus.send.disconnect(); } catch (e) { /* noop */ } entry.bus = null; }
+  return entry;
+}
+
 export function get(id) {
   return registry.get(id) || null;
 }
