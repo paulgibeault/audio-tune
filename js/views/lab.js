@@ -1,17 +1,21 @@
 // Explore — Fleet sounds (a cue as an editable recipe), Elements (one gesture
-// at a time), and the Guide. Design: docs/explore-design.md.
+// at a time), My sounds (the composer) and the Guide. Design:
+// docs/explore-design.md; the organisation: docs/ux-pass-2026-09.md.
 
 import * as Packs from '../packs.js';
 import * as Rec from '../recorder.js';
 import { ComposerView } from './composer.js';
 import * as Render from '../render.js';
 import * as Stats from '../stats.js';
+import * as Share from '../share.js';
+import * as Cues from '../user-cues.js';
 import { elementControls } from '../element-ui.js';
 import { ELEMENTS, ELEMENT_NAMES, BODY_PRESETS } from '../element-params.js';
 import { CUE_PARAMS, noteFor, defaultParams } from '../cue-params.js';
 import { kindOf, pairFor } from '../param-kinds.js';
 import { KINDS, PANELS, GUIDE, paramHelp } from '../help.js';
-import { control, dice, panelHelp, el, fmtMs, fmtHz } from '../controls.js';
+import { control, panelHelp, el, fmtMs, fmtHz, noteOf, dB } from '../controls.js';
+import { menu, more, intro, groupedControls, soundPicker } from '../ui.js';
 import { defaultsFor, buildParams, explicitDur, snippet, semitoneForKey, noteName, ROOM_KNOBS, ROOM_PRESETS, roomState, num } from '../lab.js';
 
 const E = () => window.ArcadeAudioElements;
@@ -30,6 +34,7 @@ export class LabView {
     this.root = root;
     this.prefs = prefs;
     this.tab = prefs.get('labTab') || 'fleet';
+    this.expert = !!prefs.get('allControls');
     // fleet recipe state
     this.packId = prefs.get('labPack') || '';
     this.cueName = prefs.get('labCue') || '';
@@ -55,7 +60,15 @@ export class LabView {
     this.tabs = el('div', { class: 'subtabs', role: 'tablist', 'aria-label': 'Explore' });
     this.body = el('div', { class: 'lab-body' });
     this.scope = el('section', { class: 'lab-scope card' });
-    this.root.append(this.tabs, this.body, this.scope);
+    const hello = intro(this.prefs, 'explore', {
+      title: 'See how a sound is made',
+      lines: [
+        'Pick a game, tap one of its sounds. You get its recipe: the gestures it is built from, in order, with every value as a control you can drag. Play hears your version; Original hears the game\'s.',
+        'Each layer shows its essentials first — pitch, length, level, and whatever the game varies per play — with the rest under More. Show all controls opens everything and stays on.',
+        'The game\'s pack is read-only. Tweaks live here until you Reset or pick another sound; Save as my sound keeps one.',
+      ],
+    });
+    this.root.append(...(hello ? [hello] : []), this.tabs, this.body, this.scope);
     this.renderTabs();
     this.renderScope();
     this.showTab(this.tab);
@@ -76,7 +89,10 @@ export class LabView {
 
   renderTabs() {
     const T = [['fleet', 'Fleet sounds'], ['elements', 'Elements'], ['mine', 'My sounds'], ['guide', 'Guide']];
-    this.tabs.replaceChildren(...T.map(([id, label]) => el('button', { class: 'subtab', role: 'tab', type: 'button', 'aria-selected': String(id === this.tab), onclick: () => this.showTab(id) }, label)));
+    const all = el('label', { class: 'control-opt' },
+      el('input', { type: 'checkbox', checked: this.expert, onchange: (e) => { this.expert = e.target.checked; this.prefs.set('allControls', this.expert); this.showTab(this.tab); } }),
+      el('span', {}, 'Show all controls'), panelHelp(PANELS.essentials.title, PANELS.essentials.body));
+    this.tabs.replaceChildren(...T.map(([id, label]) => el('button', { class: 'subtab', role: 'tab', type: 'button', 'aria-selected': String(id === this.tab), onclick: () => this.showTab(id) }, label)), all);
   }
 
   showTab(id) {
@@ -86,7 +102,7 @@ export class LabView {
     this.body.replaceChildren();
     if (id === 'fleet') this.renderFleet();
     else if (id === 'elements') this.renderElements();
-    else if (id === 'mine') { this.composer = new ComposerView(this.body, { prefs: this.prefs, wakeScope: (s) => this.wakeScope(s) }); this.composer.mount(); }
+    else if (id === 'mine') { this.composer = new ComposerView(this.body, { prefs: this.prefs, wakeScope: (s) => this.wakeScope(s), expert: () => this.expert }); this.composer.mount(); }
     else this.renderGuide();
   }
 
@@ -114,34 +130,41 @@ export class LabView {
   // ── FLEET SOUNDS ──────────────────────────────────────────────────────
 
   renderFleet() {
-    const packSel = el('select', { 'aria-label': 'game', onchange: () => { this.packId = packSel.value; this.cueName = ''; this.prefs.set('labPack', this.packId); this.pickPack(); } },
-      el('option', { value: '' }, 'Pick a game…'),
-      ...Packs.list().filter((p) => p.kind === 'graph').map((p) => el('option', { value: p.id, selected: p.id === this.packId }, p.name)));
-    this.cueSel = el('select', { 'aria-label': 'sound', disabled: true, onchange: () => { this.cueName = this.cueSel.value; this.prefs.set('labCue', this.cueName); this.pickCue(); } });
+    // Only packs the recorder can read: graph packs, and not the user's own
+    // (My sounds has its own tab, where its layers are the real thing).
+    const packs = Packs.list().filter((p) => p.kind === 'graph' && p.id !== Cues.PACK_ID);
+    if (this.packId && !packs.some((p) => p.id === this.packId)) { this.packId = ''; this.cueName = ''; }
+    this.picker = soundPicker({
+      packs, picked: this.packId && this.cueName ? { pack: this.packId, cue: this.cueName } : (this.packId ? { pack: this.packId, cue: null } : null),
+      audition: false, label: 'fleet sounds',
+      onPick: (packId, cueName) => {
+        this.packId = packId; this.cueName = cueName;
+        this.prefs.set('labPack', packId); this.prefs.set('labCue', cueName);
+        this.entry = Packs.get(packId);
+        this.pickCue();
+        const head = this.recipeRoot.querySelector('.recipe-head');
+        if (head) head.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      },
+    });
     this.recipeRoot = el('div', { class: 'recipe' });
     this.body.append(
       el('section', { class: 'card' },
         el('h2', { class: 'card-h' }, 'Fleet sounds', panelHelp(PANELS.fleet.title, PANELS.fleet.body)),
-        el('p', { class: 'card-sub' }, 'Pick a game and one of its sounds. You will see exactly how it is made — and you can change any of it.'),
-        el('div', { class: 'row' }, packSel, this.cueSel)),
+        el('p', { class: 'card-sub' }, 'A game, then one of its sounds. You will see exactly how it is made — and you can change any of it.'),
+        this.picker),
       this.recipeRoot,
     );
-    if (this.packId) this.pickPack();
+    if (this.packId && this.cueName) this.restoreCue();
   }
 
-  async pickPack() {
-    this.cueSel.disabled = true; this.cueSel.replaceChildren(); this.recipeRoot.replaceChildren();
-    if (!this.packId) return;
+  async restoreCue() {
     this.recipeRoot.append(el('p', { class: 'card-sub' }, 'Loading pack…'));
     const entry = await Packs.load(this.packId);
     if (this.tab !== 'fleet') return;
     this.recipeRoot.replaceChildren();
     if (entry.status !== 'ready') { this.recipeRoot.append(el('p', { class: 'board-status is-error' }, `Pack unavailable — ${entry.error}`)); return; }
     this.entry = entry;
-    this.cueSel.replaceChildren(el('option', { value: '' }, 'Pick a sound…'),
-      ...entry.pack.cues.map((c) => el('option', { value: c.name, selected: c.name === this.cueName }, c.name + (c.sustained ? ' (bed)' : ''))));
-    this.cueSel.disabled = false;
-    if (this.cueName && entry.pack.cues.some((c) => c.name === this.cueName)) this.pickCue();
+    if (entry.pack.cues.some((c) => c.name === this.cueName)) this.pickCue();
   }
 
   pickCue() {
@@ -170,66 +193,102 @@ export class LabView {
     for (const k of Object.keys(this.overrides)) if (!this.recipe || !this.recipe.layers[k]) delete this.overrides[k];
   }
 
+  changedCount() { return Object.values(this.overrides).reduce((n, ov) => n + Object.keys(ov.params || {}).length + ('at' in ov ? 1 : 0) + ('dur' in ov ? 1 : 0), 0); }
+
   renderRecipe() {
     const R = this.recipeRoot;
     R.replaceChildren();
     if (!this.recipe) { R.append(el('p', { class: 'board-status is-error' }, `Could not record this cue — ${this.recipeError}`)); return; }
     const meta = (CUE_PARAMS[this.packId] || {})[this.cueName] || {};
     const desc = this.entry.desc;
+    const n = this.recipe.layers.length;
 
-    // header + transport
+    // head: what it is, how to play it, and where tweaks go
     const head = el('section', { class: 'card recipe-head' },
       el('h2', { class: 'card-h' }, this.cueName, el('small', {}, ` · ${desc.name}`), panelHelp(PANELS.layer.title, PANELS.layer.body)),
       el('p', { class: 'card-sub' }, noteFor(this.packId, this.cueName) || '—'),
       el('p', { class: 'recipe-facts' },
-        `${this.recipe.layers.length} gesture${this.recipe.layers.length === 1 ? '' : 's'} · send ${num(this.cue.send)} · room: ${desc.name}${this.cue.sustained ? ' · bed (8 s take)' : ''}${this.recipe.countVaried ? ' · some plays add or drop a layer' : ''}`),
+        `${n} gesture${n === 1 ? '' : 's'} · send ${num(this.cue.send)} · room: ${desc.name}${this.cue.sustained ? ' · bed (8 s take)' : ''}${this.recipe.countVaried ? ' · some plays add or drop a layer' : ''}`),
     );
+    this.takeLabel = el('span', { class: 'take-label' }, `take #${this.takeNo}`);
     const transport = el('div', { class: 'transport' },
       el('button', { class: 'tool tool-primary', type: 'button', onclick: () => this.playRecipe(false) }, '▶ Play'),
-      el('button', { class: 'tool', type: 'button', onclick: () => this.playRecipe(true) }, 'Original'),
+      el('button', { class: 'tool', type: 'button', title: 'the untouched take, for A/B', onclick: () => this.playRecipe(true) }, 'Original'),
       el('button', { class: 'tool', type: 'button', onclick: () => this.reroll() }, '⚄ Re-roll'),
       el('button', { class: 'tool', type: 'button', onclick: () => { this.overrides = {}; this.renderRecipe(); } }, 'Reset'),
-      el('button', { class: 'tool', type: 'button', onclick: () => this.renderRecipeWav() }, '⤓ WAV'),
+      this.takeLabel,
       el('label', { class: 'control-opt' }, el('input', { type: 'checkbox', checked: this.auditionOnChange, onchange: (e) => { this.auditionOnChange = e.target.checked; } }), el('span', {}, 'play on change')),
-      el('span', { class: 'take-label' }, `take #${this.takeNo}`),
       panelHelp(PANELS.transport.title, PANELS.transport.body),
+      menu({ label: 'More for this sound', items: [
+        { label: 'Copy as pack code', onSelect: () => this.copy(this.codeNode ? this.codeNode.textContent : '') },
+        { label: 'Download as WAV', onSelect: () => this.renderRecipeWav() },
+      ] }),
     );
     head.append(transport);
-    if (this.cueParams) {
-      const pc = el('div', { class: 'row cue-params' }, el('span', { class: 'card-sub' }, 'the game passes:'));
-      for (const [k, v] of Object.entries(this.cueParams)) {
-        const spec = meta.params && meta.params[k];
-        if (Array.isArray(spec)) {
-          pc.append(control({ kind: 'count', name: k, label: k, value: v, range: [spec[0], spec[1], spec[2]], help: `The game passes \`${k}\` to this cue per play; the recipe is recorded with this value.`,
-            onChange: (nv) => { this.cueParams[k] = nv; this.record(); this.renderRecipe(); if (this.auditionOnChange) this.playRecipe(false); } }));
-        } else if (spec && spec.options) {
-          pc.append(control({ kind: 'choice', name: k, label: k, value: v, options: spec.options, help: `The game passes \`${k}\` to this cue.`,
-            onChange: (nv) => { this.cueParams[k] = nv; this.record(); this.renderRecipe(); if (this.auditionOnChange) this.playRecipe(false); } }));
-        } else if (spec && spec.bool) {
-          pc.append(control({ kind: 'toggle', name: k, label: k, value: v, help: `The game passes \`${k}\` to this cue.`,
-            onChange: (nv) => { this.cueParams[k] = nv; this.record(); this.renderRecipe(); if (this.auditionOnChange) this.playRecipe(false); } }));
-        }
-      }
-      head.append(pc);
-    }
+    // read-only, and the way out
+    const tooBig = n > Cues.MAX_LAYERS;
+    this.changedLabel = el('span', { class: 'readonly-state' });
+    head.append(el('div', { class: 'readonly' },
+      el('span', {}, `${desc.name}'s pack is read-only — nothing here changes the game or the board.`),
+      this.changedLabel,
+      el('button', { class: 'tool', type: 'button', disabled: tooBig, title: tooBig ? `${n} layers — a sound holds at most ${Cues.MAX_LAYERS}` : 'keep this take, with your changes, as a sound of your own',
+        onclick: () => this.saveAsSound() }, 'Save as my sound'),
+      panelHelp(PANELS.readOnly.title, `${PANELS.readOnly.body} ${PANELS.saveAsSound.body}`)));
     R.append(head);
 
-    // timeline
-    R.append(this.renderTimeline());
+    // the values the game passes per play
+    if (this.cueParams) {
+      const grid = el('div', { class: 'controls' });
+      const rerecord = () => { this.record(); this.renderRecipe(); if (this.auditionOnChange) this.playRecipe(false); };
+      for (const [k, v] of Object.entries(this.cueParams)) {
+        const spec = meta.params && meta.params[k];
+        const help = `The game passes \`${k}\` to this cue per play; the recipe is recorded with this value.`;
+        if (Array.isArray(spec)) grid.append(control({ kind: 'count', name: k, label: k, value: v, range: [spec[0], spec[1], spec[2]], help, onChange: (nv) => { this.cueParams[k] = nv; rerecord(); } }));
+        else if (spec && spec.options) grid.append(control({ kind: 'choice', name: k, label: k, value: v, options: spec.options, help, onChange: (nv) => { this.cueParams[k] = nv; rerecord(); } }));
+        else if (spec && spec.bool) grid.append(control({ kind: 'toggle', name: k, label: k, value: v, help, onChange: (nv) => { this.cueParams[k] = nv; rerecord(); } }));
+      }
+      R.append(el('section', { class: 'card' },
+        el('h3', { class: 'card-h' }, 'Game parameters', panelHelp(PANELS.gameParams.title, PANELS.gameParams.body)),
+        el('p', { class: 'card-sub' }, 'What the game hands this cue when it plays it. The recipe below is recorded at these values.'),
+        grid));
+    }
 
-    // layers
+    R.append(this.renderTimeline());
     this.recipe.layers.forEach((L) => R.append(this.renderLayer(L)));
 
-    // code
+    // code, folded away
     const code = el('pre', { class: 'lab-code', tabindex: '0' });
+    this.codeNode = code;
     const refresh = () => { code.textContent = Rec.cueSource(this.cueName, this.recipe, { end: typeof this.recipe.end === 'number' ? this.recipe.end : this.lastDur, overrides: this.overrides }); };
     this.refreshCode = refresh;
     refresh();
     R.append(el('section', { class: 'card' },
-      el('h3', { class: 'card-h' }, 'Recreate it — pack code', panelHelp(PANELS.code.title, PANELS.code.body)),
-      el('p', { class: 'card-sub' }, 'This take, with your changes, as a cue for a game\'s js/soundpack.js.'),
-      el('div', { class: 'row' }, el('button', { class: 'tool', type: 'button', onclick: () => this.copy(code.textContent) }, 'Copy')),
-      code));
+      more('Recreate it — pack code', [
+        el('p', { class: 'card-sub' }, 'This take, with your changes, as a cue for a game\'s js/soundpack.js. ', panelHelp(PANELS.code.title, PANELS.code.body)),
+        el('div', { class: 'row' }, el('button', { class: 'tool', type: 'button', onclick: () => this.copy(code.textContent) }, 'Copy')),
+        code,
+      ])));
+    this.markChanged();
+  }
+
+  markChanged() {
+    const c = this.changedCount();
+    if (this.changedLabel) this.changedLabel.textContent = c ? `${c} change${c === 1 ? '' : 's'} in this session` : 'no changes yet';
+  }
+
+  async saveAsSound() {
+    if (!this.recipe) return;
+    let cue;
+    try { cue = Cues.fromRecipe(`${this.cueName}-${this.entry.desc.id}`, this.recipe, { overrides: this.overrides, send: this.cue.send }); }
+    catch (e) { Share.toast(`Could not save: ${e.message}`, 'error', 3000); return; }
+    const ok = await Cues.save(cue);
+    if (!ok) { Share.toast('Sounds need the launcher store to save', 'error'); return; }
+    const { cues, room } = await Cues.list();
+    Packs.registerVirtual(Cues.PACK_DESC, Cues.buildPack(cues, room, Rec.library() || E(), BODY_PRESETS));
+    Stats.bump('soundsBuilt');
+    this.prefs.set('cue', cue.id);
+    Share.toast(`Saved "${cue.name}" to My sounds`, 'success', 2500);
+    this.showTab('mine');
   }
 
   renderTimeline() {
@@ -249,7 +308,6 @@ export class LabView {
         'aria-label': `${L.el} at ${fmtMs(at)}, ${fmtMs(d)} long — drag to move, tap to jump`,
         onclick: () => { const c = this.recipeRoot.querySelector(`[data-layer="${L.i}"]`); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'center' }); } },
         el('span', {}, L.el));
-      // drag to move
       let startX = 0, startAt = 0, moved = false;
       block.addEventListener('pointerdown', (e) => { startX = e.clientX; startAt = at; moved = false; block.setPointerCapture(e.pointerId); });
       block.addEventListener('pointermove', (e) => {
@@ -289,6 +347,25 @@ export class LabView {
   }
   changed(L, k) { const ov = this.overrides[L.i]; return !!(ov && ov.params && k in ov.params); }
 
+  /** One line that says what this layer is: pitch, length, band, level. */
+  summarize(L) {
+    const p = this.paramsOf(L);
+    const bits = [];
+    const pk = ['f0', 'freq', 'f'].find((k) => typeof p[k] === 'number');
+    if (pk) {
+      const meta = kindOf(L.el, pk);
+      let s = meta.kind === 'filter' ? `${meta.filter === 'bandpass' ? 'around' : 'near'} ${fmtHz(p[pk])}` : `${noteOf(p[pk]).name} · ${fmtHz(p[pk])}`;
+      if (typeof p.f1 === 'number' && p.f1) s += ` → ${fmtHz(p.f1)}`;
+      bits.push(s);
+    }
+    const d = this.durOf(L); if (d) bits.push(fmtMs(d));
+    if (typeof p.hp === 'number' && p.hp) bits.push(`above ${fmtHz(p.hp)}`);
+    if (typeof p.lp === 'number' && p.lp) bits.push(`below ${fmtHz(p.lp)}`);
+    if (Array.isArray(p.partials)) bits.push(`${p.partials.length} partials`);
+    if (typeof p.gain === 'number') bits.push(p.gain > 0 ? `${dB(p.gain).toFixed(0)} dB` : 'silent');
+    return bits.join(' · ');
+  }
+
   renderLayer(L) {
     const def = ELEMENTS[L.el] || { params: {}, note: '' };
     const p = this.paramsOf(L);
@@ -296,8 +373,9 @@ export class LabView {
       el('h3', { class: 'card-h' }, el('span', { class: 'layer-no' }, `${L.i + 1}`), L.el,
         el('small', {}, ` at ${fmtMs(this.at(L))}${L.atVaried ? ' · timing varies' : ''}`),
         panelHelp(`${L.el}`, def.note || KINDS.number.body)),
+      el('p', { class: 'layer-sum' }, this.summarize(L)),
       el('p', { class: 'card-sub' }, def.note || ''));
-    const grid = el('div', { class: 'controls' });
+    const items = [];
     const done = new Set();
     const onChange = (patch) => { this.setOverride(L.i, patch); this.afterChange(); };
     const keys = Object.keys(p).filter((k) => k !== 'seed');
@@ -308,22 +386,23 @@ export class LabView {
       const spec = def.params[k];
       const help = paramHelp(L.el, k);
       const varied = L.varied.includes(k);
-      // explicit-dur elements: the duration is the 4th argument, not a param
       if (pair && pair.kind === 'sweep' && p[pair.a] != null && p[pair.b] != null) {
         done.add(pair.a); done.add(pair.b);
+        const vr = L.varied.includes(pair.a) || L.varied.includes(pair.b);
         const c = control({ kind: 'sweep', name: `${pair.a}-${pair.b}`, label: `${pair.a} → ${pair.b}`, values: { from: p[pair.a], to: p[pair.b] },
           ranges: { from: rangeFor(def, pair.a, p[pair.a]), to: rangeFor(def, pair.b, p[pair.b]) },
-          help: `${paramHelp(L.el, pair.a)} ${paramHelp(L.el, pair.b)}`, varied: L.varied.includes(pair.a) || L.varied.includes(pair.b),
+          help: `${paramHelp(L.el, pair.a)} ${paramHelp(L.el, pair.b)}`, varied: vr,
           onChange: ({ from, to }) => onChange({ params: { [pair.a]: from, [pair.b]: to } }) });
         c.setChanged(this.changed(L, pair.a) || this.changed(L, pair.b));
-        grid.append(c); continue;
+        items.push({ kind: 'sweep', name: `${pair.a}-${pair.b}`, varied: vr, node: c }); continue;
       }
       if (pair && pair.kind === 'envelope' && (p[pair.b] != null || L.dur != null)) {
         done.add(pair.a); done.add(pair.b);
         const durVal = L.dur != null ? (this.durOf(L)) : p[pair.b];
+        const vr = L.varied.includes(pair.a) || L.varied.includes(pair.b) || L.varied.includes('dur');
         const c = control({ kind: 'envelope', name: `${pair.a}-${pair.b}`, label: `${pair.a} · ${pair.b}`, values: { attack: p[pair.a] ?? null, dur: durVal },
           ranges: { attack: p[pair.a] != null ? rangeFor(def, pair.a, p[pair.a]) : null, dur: rangeFor(def, pair.b, durVal) },
-          help: `${paramHelp(L.el, pair.a)} ${paramHelp(L.el, pair.b)}`, varied: L.varied.includes(pair.a) || L.varied.includes(pair.b) || L.varied.includes('dur'),
+          help: `${paramHelp(L.el, pair.a)} ${paramHelp(L.el, pair.b)}`, varied: vr,
           onChange: ({ attack, dur }) => {
             const patch = { params: {} };
             if (p[pair.a] != null) patch.params[pair.a] = attack;
@@ -331,56 +410,56 @@ export class LabView {
             onChange(patch);
           } });
         c.setChanged(this.changed(L, pair.a) || this.changed(L, pair.b) || (this.overrides[L.i] && 'dur' in this.overrides[L.i]));
-        grid.append(c); continue;
+        items.push({ kind: 'envelope', name: `${pair.a}-${pair.b}`, varied: vr, node: c }); continue;
       }
       done.add(k);
       const c = this.controlFor(L.el, k, v, spec, help, varied, (nv) => onChange({ params: { [k]: nv } }));
-      if (c) { c.setChanged(this.changed(L, k)); grid.append(c); }
+      if (c) { c.setChanged(this.changed(L, k)); items.push({ kind: c.dataset.kind, name: k, varied, node: c }); }
     }
     if (L.dur != null && !done.has('dur')) {
       const c = control({ kind: 'time', name: 'dur', label: 'length', value: this.durOf(L), range: rangeFor(def, 'dur', this.durOf(L)), help: paramHelp(L.el, 'dur'), varied: L.varied.includes('dur'),
         onChange: (nv) => onChange({ dur: nv }) });
       c.setChanged(!!(this.overrides[L.i] && 'dur' in this.overrides[L.i]));
-      grid.append(c);
+      items.push({ kind: 'time', name: 'dur', varied: L.varied.includes('dur'), node: c });
     }
-    if ('seed' in p) {
-      const c = control({ kind: 'time', name: 'seed', label: 'seed', value: 0, range: [0, 1, 1], help: '' });
-      c.remove(); // seeds are shown once, on the transport's take — not per layer
-    }
-    card.append(grid);
+    card.append(groupedControls(items, { expert: this.expert }));
     return card;
   }
 
   controlFor(element, k, v, spec, help, varied, onChange) {
     const meta = kindOf(element, k);
     const base = { name: k, label: meta.label || k, value: v, help, varied, onChange };
+    const tag = (node, kind) => { node.dataset.kind = kind; return node; };
     if (meta.kind === 'partials' || (Array.isArray(v) && v.length && typeof v[0] === 'object' && 'ratio' in v[0])) {
-      return control({ ...base, kind: 'partials', presets: BODY_PRESETS });
+      return tag(control({ ...base, kind: 'partials', presets: BODY_PRESETS }), 'partials');
     }
-    if (typeof v === 'boolean') return control({ ...base, kind: 'toggle' });
+    if (typeof v === 'boolean') return tag(control({ ...base, kind: 'toggle' }), 'toggle');
     if (typeof v === 'string') {
       const options = spec && spec.options ? spec.options : [v];
-      return control({ ...base, kind: 'choice', options: options.includes(v) ? options : [v, ...options] });
+      return tag(control({ ...base, kind: 'choice', options: options.includes(v) ? options : [v, ...options] }), 'choice');
     }
     if (typeof v !== 'number') return null;
     const range = rangeFor(ELEMENTS[element] || { params: {} }, k, v);
     switch (meta.kind) {
-      case 'pitch': return control({ ...base, kind: 'pitch', range });
-      case 'filter': return control({ ...base, kind: 'filter', filter: meta.filter, range });
-      case 'gain': return control({ ...base, kind: 'gain', range: [0, 1, 0.005] });
-      case 'time': return control({ ...base, kind: 'time', range });
-      case 'count': return control({ ...base, kind: 'count', range: [range[0], range[1], 1] });
-      case 'character': return control({ ...base, kind: 'character', range, poles: meta.poles, unit: meta.unit, center: k === 'end' || k === 'bend' ? 1 : undefined });
-      default: return control({ ...base, kind: 'number', range });
+      case 'pitch': return tag(control({ ...base, kind: 'pitch', range }), 'pitch');
+      case 'filter': return tag(control({ ...base, kind: 'filter', filter: meta.filter, range }), 'filter');
+      case 'gain': return tag(control({ ...base, kind: 'gain', range: [0, 1, 0.005] }), 'gain');
+      case 'time': return tag(control({ ...base, kind: 'time', range }), 'time');
+      case 'count': return tag(control({ ...base, kind: 'count', range: [range[0], range[1], 1] }), 'count');
+      case 'character': return tag(control({ ...base, kind: 'character', range, poles: meta.poles, unit: meta.unit, center: k === 'end' || k === 'bend' ? 1 : undefined }), 'character');
+      default: return tag(control({ ...base, kind: 'number', range }), 'number');
     }
   }
 
   afterChange() {
     if (this.refreshCode) this.refreshCode();
-    // mark changed dots without a full re-render
+    this.markChanged();
+    // mark changed dots and refresh summaries without a full re-render
     this.recipeRoot.querySelectorAll('.layer').forEach((card) => {
       const i = Number(card.dataset.layer);
       const ov = this.overrides[i];
+      const L = this.recipe.layers[i];
+      const sum = card.querySelector('.layer-sum'); if (sum && L) sum.textContent = this.summarize(L);
       card.querySelectorAll('.control').forEach((c) => {
         const name = c.dataset.param || '';
         const parts = name.split('-');
@@ -450,10 +529,8 @@ export class LabView {
   }
 
   async copy(text) {
-    let ok = false;
-    if (window.Arcade && Arcade.ui && typeof Arcade.ui.copy === 'function') { try { ok = await Arcade.ui.copy(text); } catch (e) { ok = false; } }
-    if (!ok && navigator.clipboard) { try { await navigator.clipboard.writeText(text); ok = true; } catch (e) { ok = false; } }
-    if (window.Arcade && Arcade.ui && Arcade.ui.toast) Arcade.ui.toast(ok ? 'Copied as pack code' : 'Select the code and copy it', { kind: ok ? 'success' : 'info', duration: 1600 });
+    const ok = await Share.copyText(text);
+    Share.toast(ok ? 'Copied as pack code' : 'Select the code and copy it', ok ? 'success' : 'info', 1600);
   }
 
   // ── ELEMENTS ──────────────────────────────────────────────────────────
@@ -482,8 +559,8 @@ export class LabView {
     const name = this.element, def = ELEMENTS[name], st = this.knobs();
     const code = el('pre', { class: 'lab-code', tabindex: '0', 'aria-label': 'pack code' });
     const refreshCode = () => { code.textContent = snippet(name, st, { vary: this.vary, cents: this.vary ? this.cents : 0, seed: this.seed }); };
-    const change = (k, v) => { refreshCode(); if (this.auditionOnChange) { clearTimeout(this.playTimer); this.playTimer = setTimeout(() => this.play(0), 140); } };
-    const grid = elementControls(name, st, change);
+    const change = () => { refreshCode(); if (this.auditionOnChange) { clearTimeout(this.playTimer); this.playTimer = setTimeout(() => this.play(0), 140); } };
+    const grid = elementControls(name, st, change, { expert: this.expert });
     const kbBox = el('input', { type: 'checkbox', checked: this.keyboard, disabled: !def.pitched, onchange: (e) => { this.keyboard = e.target.checked; kbHint.hidden = !this.keyboard; } });
     const kbHint = el('p', { class: 'ctl-hint', hidden: !this.keyboard }, 'A W S E D F T G Y H U J K O L P ; play C4 up from the current pitch; Z / X shift the octave.');
     const varyBox = el('input', { type: 'checkbox', checked: this.vary, onchange: (e) => { this.vary = e.target.checked; refreshCode(); } });
@@ -498,13 +575,13 @@ export class LabView {
         el('label', { class: 'control-opt' }, kbBox, el('span', {}, 'keyboard')),
         el('label', { class: 'control-opt' }, el('input', { type: 'checkbox', checked: this.auditionOnChange, onchange: (e) => { this.auditionOnChange = e.target.checked; } }), el('span', {}, 'play on change')),
         panelHelp(PANELS.transport.title, 'Play fires the gesture; Hold repeats it so you can hear it at play density. Vary draws pitch and seed from the stream as a pack would; off, the same seed repeats exactly.'),
+        menu({ label: 'More for this element', items: [{ label: 'Copy as pack code', onSelect: () => this.copy(code.textContent) }] }),
       ),
       kbHint,
       grid,
-      el('div', { class: 'row' }, control({ kind: 'distance', name: 'send', label: 'send', value: this.send, help: 'How far away this gesture sits in the lab room.', onChange: (v) => { this.send = v; } })),
-      el('h3', { class: 'card-h' }, 'Pack code', panelHelp(PANELS.code.title, PANELS.code.body)),
-      el('div', { class: 'row' }, el('button', { class: 'tool', type: 'button', onclick: () => this.copy(code.textContent) }, 'Copy')),
-      code,
+      el('div', { class: 'control-group' }, el('div', { class: 'group-h', 'aria-hidden': 'true' }, 'Place'),
+        el('div', { class: 'controls' }, control({ kind: 'distance', name: 'send', label: 'send', value: this.send, help: 'How far away this gesture sits in the lab room.', onChange: (v) => { this.send = v; } }))),
+      more('Pack code', [el('p', { class: 'card-sub' }, 'The line a pack would carry for these values. ', panelHelp(PANELS.code.title, PANELS.code.body)), code]),
     );
     refreshCode();
   }
@@ -546,7 +623,7 @@ export class LabView {
   onKey(e) {
     if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
     const t = e.target;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.tagName === 'BUTTON')) return;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.tagName === 'BUTTON' || t.tagName === 'SUMMARY')) return;
     if (e.key === ' ') { e.preventDefault(); if (this.tab === 'fleet') this.playRecipe(false); else if (this.tab === 'elements') this.play(0); return; }
     if (this.tab !== 'elements' || !this.keyboard) return;
     if (e.key === 'z') { this.octave = Math.max(-3, this.octave - 1); return; }
@@ -592,7 +669,7 @@ export class LabView {
       el('h3', { class: 'card-h' }, 'Room', panelHelp(PANELS.room.title, PANELS.room.body)),
       el('p', { class: 'card-sub' }, 'Every element you play here feeds this one room. Try the same strike in the pond and in the well.'),
       el('div', { class: 'row' }, presets, loadAll),
-      grid);
+      more('Room controls', [grid], { open: this.expert }));
   }
 
   pickRoom(v) {
@@ -612,7 +689,6 @@ export class LabView {
       nav.append(el('a', { href: `#guide-${g.id}`, class: 'guide-link' }, g.title));
       main.append(el('section', { class: 'card', id: `guide-${g.id}` }, el('h2', { class: 'card-h' }, g.title), ...g.body.map((p) => el('p', { class: 'guide-p' }, p))));
     }
-    // controls legend
     main.append(el('section', { class: 'card' }, el('h2', { class: 'card-h' }, 'The controls'),
       el('p', { class: 'guide-p' }, 'Every parameter is drawn as what it means. Each control also has a ? for its own note.'),
       el('dl', { class: 'legend' }, ...Object.entries(KINDS).filter(([k]) => !['number', 'toggle'].includes(k)).flatMap(([k, v]) => [el('dt', {}, v.title), el('dd', {}, v.body)]))));
@@ -685,4 +761,3 @@ function rangeFor(def, k, v) {
   const [min, max, step] = r;
   return [Math.min(min, v), Math.max(max, v), step];
 }
-void fmtHz;

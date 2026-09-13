@@ -249,6 +249,45 @@ Object.assign(PANELS, {
   },
 });
 
+Object.assign(PANELS, {
+  customize: {
+    title: 'Customize',
+    body: 'Arrange the board without changing what is on it. Drag a pad onto another to move it, or use its ◀ ▶; the eye hides a pad, and hidden pads stay dimmed here and disappear when you are done. The keyboard rows follow the order you see. On a board of yours, tap a pad to give it a different sound.',
+  },
+  boardMenu: {
+    title: 'Board menu',
+    body: 'Everything about the board that is not playing it: pad size, key hints, resetting a layout, saving a copy, and — on your own boards — share, send, export and delete.',
+  },
+  essentials: {
+    title: 'Show all controls',
+    body: 'Off, each layer shows the controls that make it this sound — pitch, length, level, and anything the pack varies per play — with the rest under More. On, every control is open on every card, and it stays on. Controls always sit in the same order: Pitch, Shape, Tone, Level.',
+  },
+  readOnly: {
+    title: 'The game\'s pack is read-only',
+    body: 'What you see is recorded from the game\'s own sound pack, and nothing here writes back to it: the board, the games and the pack file are untouched by anything you do. Your changes live in this session until Reset or another sound. To keep a tweak, save it as a sound of your own — it becomes a pad, a track, and pack code.',
+  },
+  gameParams: {
+    title: 'Game parameters',
+    body: 'The values the game passes to this cue when it plays it — how many lanterns caught, which card rank landed. The recipe is recorded with these; change one to see how the cue answers.',
+  },
+  saveAsSound: {
+    title: 'Save as my sound',
+    body: 'Turns this take, with your changes, into a cue in My sounds: every layer with its values as they are now, and no per-play variation until you add some. From there it is a pad on any board, a track in any song, and code for a game.',
+  },
+  songMenu: {
+    title: 'Song menu',
+    body: 'Switch between your songs, start a new one, duplicate or delete this one, share it as a code, send it to a linked device, save or open a file, and render it to WAV. Songs save themselves as you work.',
+  },
+  gridSettings: {
+    title: 'Grid',
+    body: 'Swing delays every other step so the groove leans. Steps per bar is how finely a bar is divided — 16 is sixteenth notes. Bars is how long each pattern is. All three can change while the song plays.',
+  },
+  picker: {
+    title: 'Picking a sound',
+    body: 'A game, then one of its sounds. Tap a sound to hear it — it plays exactly as the game plays it, through the game\'s own room. Sounds marked ∞ are beds: they run until stopped.',
+  },
+});
+
 export const GUIDE = [
   {
     id: 'elements', title: 'Elements, cues, rooms, packs',
@@ -283,6 +322,7 @@ export const GUIDE = [
     id: 'build', title: 'Building a sound',
     body: [
       'Explore › My sounds is where a sound that does not exist yet gets made. Add gestures as layers, set each one\'s offset on the timeline, and shape it with the same controls the fleet recipes use. Give every layer a little variation — a few cents of pitch, a little level — so no two plays are identical, the way the fleet\'s cues work.',
+      'The fleet\'s packs are read-only: tweaking a game\'s sound in Fleet sounds never changes the game, the board, or the pack. When a tweak is worth keeping, Save as my sound copies the take into My sounds and it is yours from there.',
       'A saved sound is a cue in the My sounds pack: pick "My sounds" as the game when you assign a pad or add a track. Copy as pack code gives you the same cue in the fleet\'s shape; drop it into a game\'s js/soundpack.js and it will play there and render in the offline audition.',
     ],
   },
@@ -297,10 +337,10 @@ export const GUIDE = [
   {
     id: 'keys', title: 'Keyboard',
     body: [
-      'Play: four rows of ten keys fire the board\'s pads — 1–0, Q–P, A–;, Z–/. Escape stops every bed. On a board of yours, Edit pads then tap a pad to change its sound.',
+      'Play: four rows of ten keys fire the board\'s pads — 1–0, Q–P, A–;, Z–/ — in the order you see them, so a board you have arranged keeps its keys where you put them. Escape stops every bed. Customize a board to move, hide or (on a board of yours) reassign pads.',
       'Explore: Space plays the current element or recipe. With keyboard mode on, the piano row — A W S E D F T G Y H U J K O L P ; — plays C4 up chromatically; Z and X shift the octave.',
       'Compose: Space plays and stops, R toggles record, 1–9 play the first nine tracks (and record them when recording), Escape stops.',
-      'Every control is a real slider or menu underneath its picture: Tab to it, then use the arrow keys.',
+      'Every control is a real slider or menu underneath its picture: Tab to it, then use the arrow keys. Every card shows its controls in the same order — Pitch, Shape, Tone, Level — with the essentials first and the rest under More; Show all controls opens everything and stays on.',
     ],
   },
 ];

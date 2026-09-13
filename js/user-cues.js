@@ -10,7 +10,9 @@
 
 import { ELEMENTS } from './element-params.js';
 import { validateUserCue, CUE_VERSION } from './validate.js';
-import { num } from './lab.js';
+import { num, formatPartials } from './lab.js';
+
+export const MAX_LAYERS = 12;
 
 export const PACK_ID = 'mine';
 export const PACK_DESC = { id: PACK_ID, name: 'My sounds', kind: 'graph', hue: 48, place: 'Sounds you built in Explore — any of them is a pad or a track.', url: null };
@@ -42,6 +44,36 @@ export function slug(text) {
 }
 
 /**
+ * A user cue from a recorded fleet recipe (js/recorder.js) with the user's
+ * overrides applied — the way a tweaked take becomes a sound of your own.
+ * Fleet packs are read-only; this is where tweaks go. Values are the take's
+ * (no per-play variation until the user adds some). Throws when the recipe
+ * has more layers than a user cue may hold.
+ */
+export function fromRecipe(name, recipe, { overrides = null, send = 0.25 } = {}) {
+  if (!recipe || !Array.isArray(recipe.layers)) throw new Error('no recipe');
+  if (recipe.layers.length > MAX_LAYERS) throw new Error(`${recipe.layers.length} layers — a sound holds at most ${MAX_LAYERS}`);
+  const layers = recipe.layers.map((L) => {
+    const ov = overrides && overrides[L.i];
+    const params = { ...L.params, ...((ov && ov.params) || {}) };
+    delete params.seed; delete params.collect;
+    for (const [k, v] of Object.entries(params)) if (typeof v === 'function' || v == null) delete params[k];
+    const def = ELEMENTS[L.el];
+    const at = ov && typeof ov.at === 'number' ? ov.at : L.at;
+    const layer = { el: L.el, at: Math.max(0, Math.min(10, Math.round(at * 1000) / 1000)), params, vary: { cents: 0, level: 0 } };
+    if (def && def.explicitDur) {
+      const d = ov && typeof ov.dur === 'number' ? ov.dur : (L.dur != null ? L.dur : params.dur);
+      layer.dur = Math.max(0.05, Math.min(60, typeof d === 'number' ? d : 4));
+      delete params.dur;
+    }
+    return layer;
+  });
+  const cue = { v: CUE_VERSION, id: uid(), name: slug(name), send: Math.max(0, Math.min(1, send)), layers, updated: Date.now() };
+  validateUserCue(cue);
+  return cue;
+}
+
+/**
  * The params one play of a layer uses: presets resolved, pitched params
  * detuned by `vary.cents`, gain jittered by `vary.level`, a seed drawn.
  * `lib` is the element library (for cents/between); `r` the seeded stream.
@@ -52,7 +84,8 @@ export function layerParams(L, lib, r, presets) {
   const pitched = new Set(def.pitched || []);
   const vary = L.vary || {};
   for (const [k, v] of Object.entries(L.params || {})) {
-    if (def.params[k] && def.params[k].preset) { out[k] = presets[v] || presets[def.params[k].preset[0]]; continue; }
+    // a preset name, or the partial table itself once a bar has been dragged
+    if (def.params[k] && def.params[k].preset) { out[k] = Array.isArray(v) ? v : (presets[v] || presets[def.params[k].preset[0]]); continue; }
     if (typeof v === 'number' && pitched.has(k) && vary.cents) { out[k] = v * lib.cents(r, vary.cents); continue; }
     if (k === 'gain' && typeof v === 'number' && vary.level) { out[k] = Math.max(0, v * (1 + (r() * 2 - 1) * vary.level)); continue; }
     out[k] = v;
@@ -108,7 +141,8 @@ export function cueSource(cue) {
     const vary = L.vary || {};
     const parts = [];
     for (const [k, v] of Object.entries(L.params || {})) {
-      if (def.params[k] && def.params[k].preset) { parts.push(`${k}: ${k.toUpperCase()}_${String(v).toUpperCase()}`); continue; }
+      if (def.params[k] && def.params[k].preset && typeof v === 'string') { parts.push(`${k}: ${k.toUpperCase()}_${String(v).toUpperCase()}`); continue; }
+      if (Array.isArray(v)) { parts.push(`${k}: ${formatPartials(v)}`); continue; }
       if (typeof v === 'string') { parts.push(`${k}: '${v}'`); continue; }
       if (typeof v === 'number' && pitched.has(k) && vary.cents) { parts.push(`${k}: ${num(v)} * S.cents(r, ${num(vary.cents)})`); continue; }
       if (k === 'gain' && typeof v === 'number' && vary.level) { parts.push(`gain: S.between(r, ${num(v * (1 - vary.level))}, ${num(v * (1 + vary.level))})`); continue; }
@@ -122,7 +156,7 @@ export function cueSource(cue) {
   }
   const end = cue.layers.reduce((m, L) => Math.max(m, L.at + (L.dur || (L.params && L.params.dur) || 0.1)), 0);
   lines.push(sustained ? '  return S.teardown(collect);' : `  return ${num(Math.round(end * 100) / 100)};`, '},');
-  const presetsUsed = cue.layers.flatMap((L) => Object.entries(L.params || {}).filter(([k]) => ELEMENTS[L.el] && ELEMENTS[L.el].params[k] && ELEMENTS[L.el].params[k].preset).map(([k, v]) => `${k.toUpperCase()}_${String(v).toUpperCase()}`));
+  const presetsUsed = cue.layers.flatMap((L) => Object.entries(L.params || {}).filter(([k, v]) => typeof v === 'string' && ELEMENTS[L.el] && ELEMENTS[L.el].params[k] && ELEMENTS[L.el].params[k].preset).map(([k, v]) => `${k.toUpperCase()}_${String(v).toUpperCase()}`));
   const pre = [...new Set(presetsUsed)].map((n) => `// ${n}: the partial table from the lab's "${n.split('_')[1].toLowerCase()}" preset`);
   return [...pre, ...lines].join('\n');
 }

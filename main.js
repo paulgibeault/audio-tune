@@ -137,26 +137,10 @@ async function boot() {
   });
   Arcade.onStateReplaced(() => { const n = currentName; currentName = null; show(n || 'play'); });
 
+  // Each view introduces itself the first time it is opened (js/ui.js
+  // intro), so there is no welcome wall here.
   const last = prefs.get('view');
   show(views[last] ? last : 'play');
-  welcome();
-}
-
-// A first-open hint: three lines and a dismiss, once.
-function welcome() {
-  if (prefs.get('welcomed')) return;
-  const card = document.createElement('section');
-  card.className = 'card welcome';
-  card.setAttribute('role', 'note');
-  card.innerHTML = '';
-  const h = document.createElement('h2'); h.className = 'card-h'; h.textContent = 'Every sound in the arcade, on one grid';
-  const p1 = document.createElement('p'); p1.className = 'card-sub'; p1.textContent = 'Play: tap a pad, or use the keyboard rows. Each board is one game\'s real sound pack. Hold a pad for its settings.';
-  const p2 = document.createElement('p'); p2.className = 'card-sub'; p2.textContent = 'Explore: pick any fleet sound and see exactly how it is made, then change any of it. Compose: put sounds on a step grid and make a song.';
-  const p3 = document.createElement('p'); p3.className = 'card-sub'; p3.textContent = 'Every control has a ? — and the Guide in Explore explains the whole system in five short pages.';
-  const btn = document.createElement('button'); btn.className = 'tool tool-primary'; btn.type = 'button'; btn.textContent = 'Got it';
-  btn.addEventListener('click', () => { prefs.set('welcomed', true); card.remove(); });
-  card.append(h, p1, p2, p3, btn);
-  $('#view').before(card);
 }
 
 boot();

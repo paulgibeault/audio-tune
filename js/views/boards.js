@@ -1,14 +1,17 @@
 // Play — the soundboards. Fleet boards are generated from each pack; my
 // boards are yours: any cue from any game on any pad, shared as codes,
 // pushed to a linked device, or saved as a file. A riff is the last few
-// seconds you played, as a code.
+// seconds you played, as a code. Any board can be customized — moved,
+// hidden, resized — without touching what is on it (js/layouts.js).
 
 import * as Packs from '../packs.js';
 import * as Boards from '../boards-store.js';
+import * as Layouts from '../layouts.js';
 import { paramsFor, noteFor, defaultParams } from '../cue-params.js';
 import { padForKey, keyForPad } from '../keys.js';
 import { PANELS } from '../help.js';
 import { control, panelHelp, el } from '../controls.js';
+import { menu, intro, soundPicker, sheet } from '../ui.js';
 import { packBoard, BOARD_SIZES } from '../validate.js';
 import { RiffBuffer, packRiff, unpackRiff, riffLength } from '../riff.js';
 import * as Share from '../share.js';
@@ -17,24 +20,28 @@ import * as Stats from '../stats.js';
 import { checkPad } from '../validate.js';
 
 const LONG_PRESS_MS = 420;
+const SIZES = [{ label: 'Small pads', value: 's' }, { label: 'Regular pads', value: 'm' }, { label: 'Large pads', value: 'l' }];
 
 export class BoardsView {
   constructor(root, { prefs }) {
     this.root = root;
     this.prefs = prefs;
-    this.boardId = null;          // a pack id (fleet) or a stored board id (mine)
+    this.boardId = null;          // a pack id (fleet), 'daily', or a stored board id (mine)
     this.mine = [];               // stored boards
     this.board = null;            // the current user board, if any
-    this.pads = [];
-    this.beds = new Map();
+    this.layout = null;           // the current fleet board's layout
+    this.allPads = [];            // every pad in board order, hidden included
+    this.pads = [];               // the visible pads, in key order
+    this.beds = new Map();        // pad model → live bed handle
     this.sheet = null;
-    this.editing = false;
+    this.customizing = false;
+    this.padSize = prefs.get('padSize') || 'm';
+    this.showKeys = prefs.get('showKeys') !== false;
     this.riff = new RiffBuffer();
     this.riffPlaying = null;
     this.unsubs = [];
     this.jamPeers = [];
     this.onKey = this.onKey.bind(this);
-    this.onKeyUp = this.onKeyUp.bind(this);
   }
 
   async mount() {
@@ -44,21 +51,28 @@ export class BoardsView {
     this.grid = el('div', { class: 'pads', role: 'group', 'aria-label': 'Pads' });
     this.riffCard = el('section', { class: 'card riff-card' });
     this.jamCard = el('section', { class: 'card jam-card', hidden: true });
-    this.root.append(this.tabs, this.head, this.grid, this.riffCard, this.jamCard);
+    const hello = intro(this.prefs, 'play', {
+      title: 'Every sound in the arcade, on one grid',
+      lines: [
+        'Each board is one game\'s real sound pack. Tap a pad, or play the keyboard rows — 1–0, Q–P, A–;, Z–/. Hold a pad for its settings.',
+        'Customize any board: move pads, hide the ones you do not want, pick a pad size. Your own boards mix sounds from every game.',
+        'Every ? explains what it sits next to. The Guide in Explore explains the whole system.',
+      ],
+    });
+    this.root.append(...(hello ? [hello] : []), this.tabs, this.head, this.grid, this.riffCard, this.jamCard);
+    this.applyGridPrefs();
     this.mountJam();
     document.addEventListener('keydown', this.onKey);
-    document.addEventListener('keyup', this.onKeyUp);
     this.mine = await Boards.list();
     this.renderTabs();
     this.renderRiff();
     const last = this.prefs.get('board');
-    const ids = [...Packs.list().map((p) => p.id), ...this.mine.map((b) => b.id)];
+    const ids = [...Packs.list().map((p) => p.id), 'daily', ...this.mine.map((b) => b.id)];
     this.open(ids.includes(last) ? last : ids[0]);
   }
 
   unmount() {
     document.removeEventListener('keydown', this.onKey);
-    document.removeEventListener('keyup', this.onKeyUp);
     this.stopAllBeds(0.3);
     this.closeSheet();
     for (const u of this.unsubs) { try { u(); } catch (e) { /* noop */ } }
@@ -67,6 +81,14 @@ export class BoardsView {
   }
 
   isMine() { return !!this.board; }
+  isDaily() { return this.boardId === 'daily'; }
+
+  applyGridPrefs() {
+    this.grid.classList.toggle('pads-s', this.padSize === 's');
+    this.grid.classList.toggle('pads-l', this.padSize === 'l');
+    this.grid.classList.toggle('no-keys', !this.showKeys);
+    this.grid.classList.toggle('is-customizing', this.customizing);
+  }
 
   renderTabs() {
     const fleet = Packs.list().map((p) => el('button', {
@@ -90,10 +112,12 @@ export class BoardsView {
     this.stopAllBeds(0.3);
     this.closeSheet();
     this.boardId = id;
-    this.editing = false;
+    this.customizing = false;
+    this.layout = null;
     this.prefs.set('board', id);
     this.board = this.mine.find((b) => b.id === id) || null;
     this.renderTabs();
+    this.applyGridPrefs();
     if (id === 'daily') return this.openDaily();
     if (this.board) return this.openMine();
     return this.openFleet(Packs.get(id));
@@ -106,6 +130,7 @@ export class BoardsView {
     const rng = A && typeof A.rng === 'function' ? A.rng(seed) : Math.random;
     const packIds = Packs.list().filter((p) => p.id !== 'mine').map((p) => p.id);
     const kit = Daily.kitBoard(date, rng, packIds);
+    this.kit = kit;
     this.root.style.setProperty('--hue', 300);
     this.head.replaceChildren(
       el('h2', { class: 'board-name' }, kit.name),
@@ -115,15 +140,10 @@ export class BoardsView {
     await Promise.all([...new Set(kit.pads.filter(Boolean).map((p) => p.pack))].map((id) => Packs.load(id)));
     if (this.boardId !== 'daily') return;
     this.head.querySelector('.board-status').remove();
-    this.pads = kit.pads.map((p, i) => (p ? this.padModel(i, p, Packs.cue(p.pack, p.cue)) : { index: i, empty: true, fixed: true }));
+    this.allPads = kit.pads.map((p, i) => (p ? this.padModel(i, p, Packs.cue(p.pack, p.cue)) : { slot: i, empty: true, fixed: true }));
+    this.reindex();
     this.renderGrid();
-    this.head.append(el('div', { class: 'board-tools' },
-      el('button', { class: 'tool', type: 'button', onclick: async () => {
-        const b = Boards.newBoard(kit.name, 16); b.pads = kit.pads.map((p) => (p ? { ...p } : null));
-        if (await Boards.save(b)) { this.mine = await Boards.list(); this.open(b.id); Share.toast('Kit saved to My boards', 'success'); }
-      } }, 'Save a copy to My boards'),
-      el('span', { class: 'tool-hint' }, 'Hold a pad for its settings.'),
-      panelHelp(PANELS.dailyKit.title, PANELS.dailyKit.body)));
+    this.renderTools('Hold a pad for its settings.', PANELS.dailyKit);
     Stats.bump('kitsPlayed');
   }
 
@@ -135,18 +155,27 @@ export class BoardsView {
       el('p', { class: 'board-place' }, desc.place || ''),
       el('p', { class: 'board-status' }, 'Loading pack…'));
     this.grid.replaceChildren();
-    const loaded = await Packs.load(desc.id);
+    const [loaded, layout] = await Promise.all([Packs.load(desc.id), Layouts.load(desc.id)]);
     if (this.boardId !== desc.id) return;
     const status = this.head.querySelector('.board-status');
     if (loaded.status !== 'ready') { status.textContent = `Pack unavailable — ${loaded.error || 'unknown error'}`; status.classList.add('is-error'); return; }
     status.remove();
-    this.pads = loaded.pack.cues.map((c, i) => this.padModel(i, { pack: desc.id, cue: c.name, params: defaultParams(desc.id, c.name) || bedDefaults(c), velocity: 1, seedLock: false, seed: 1 }, c));
+    this.layout = layout;
+    this.buildFleet();
+    this.renderTools('Tap a pad, or use the keyboard rows. Hold a pad for its settings.', PANELS.fleetBoard);
+  }
+
+  /** Fleet pad models from the pack's cues in the layout's order. */
+  buildFleet() {
+    const entry = Packs.get(this.boardId);
+    const names = entry.pack.cues.map((c) => c.name);
+    const { all, hidden } = Layouts.applyLayout(names, this.layout);
+    this.allPads = all.map((n) => {
+      const c = entry.pack.cues.find((x) => x.name === n);
+      return this.padModel(n, { pack: entry.desc.id, cue: n, params: defaultParams(entry.desc.id, n) || bedDefaults(c), velocity: 1, seedLock: false, seed: 1, hidden: hidden.has(n) }, c);
+    });
+    this.reindex();
     this.renderGrid();
-    this.head.append(el('div', { class: 'board-tools' },
-      el('button', { class: 'tool', type: 'button', onclick: () => this.stopAllBeds(0.4) }, 'Stop beds'),
-      el('button', { class: 'tool', type: 'button', onclick: () => this.copyFleetBoard(desc, loaded.pack) }, 'Save a copy to My boards'),
-      el('span', { class: 'tool-hint' }, 'Tap a pad, or use the keyboard rows. Hold a pad for its settings.'),
-      panelHelp(PANELS.fleetBoard.title, PANELS.fleetBoard.body)));
   }
 
   async openMine() {
@@ -163,78 +192,209 @@ export class BoardsView {
     await Promise.all(packs.map((id) => Packs.load(id)));
     if (this.boardId !== b.id) return;
     this.head.querySelector('.board-status').remove();
-    this.pads = b.pads.map((p, i) => p ? this.padModel(i, p, Packs.cue(p.pack, p.cue)) : { index: i, empty: true });
-    this.renderGrid();
-    const editBtn = el('button', { class: `tool${this.editing ? ' tool-primary' : ''}`, type: 'button', 'aria-pressed': String(this.editing), onclick: () => { this.editing = !this.editing; editBtn.classList.toggle('tool-primary', this.editing); editBtn.setAttribute('aria-pressed', String(this.editing)); this.grid.classList.toggle('is-editing', this.editing); } }, 'Edit pads');
-    const size = control({ kind: 'choice', name: 'size', label: 'pads', value: b.pads.length, options: BOARD_SIZES, help: 'How many pads the board has. Growing keeps every pad; shrinking drops the pads past the new size.',
-      onChange: (n) => { const len = Number(n); const next = new Array(len).fill(null); b.pads.slice(0, len).forEach((p, i) => { next[i] = p; }); b.pads = next; this.saveBoard(); this.openMine(); } });
-    this.head.append(el('div', { class: 'board-tools' },
-      editBtn,
-      el('button', { class: 'tool', type: 'button', onclick: () => this.stopAllBeds(0.4) }, 'Stop beds'),
-      el('button', { class: 'tool', type: 'button', onclick: () => this.shareBoard() }, 'Share'),
-      Share.configsAvailable() ? el('button', { class: 'tool', type: 'button', onclick: () => this.sendBoard() }, 'Send to device') : null,
-      el('button', { class: 'tool', type: 'button', onclick: () => Share.downloadJson(`${b.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'board'}.audio-tune-board.json`, packBoard(b)) }, 'Export file'),
-      el('button', { class: 'tool', type: 'button', onclick: () => this.deleteBoard() }, 'Delete'),
-      panelHelp(PANELS.share.title, PANELS.share.body),
-    ), el('div', { class: 'row' }, size));
-    this.grid.classList.toggle('is-editing', this.editing);
+    this.buildMine();
+    this.renderTools(this.customizing ? 'Tap a pad to give it a sound; drag to move; the eye hides it.' : 'Customize to assign, move or hide pads. Hold a pad for its settings.', null);
   }
 
-  padModel(index, p, cueInfo) {
+  /** My-board pad models from pads[]; the slot is the storage index. */
+  buildMine() {
+    const b = this.board;
+    this.allPads = b.pads.map((p, i) => p ? this.padModel(i, p, Packs.cue(p.pack, p.cue)) : { slot: i, empty: true });
+    this.reindex();
+    this.renderGrid();
+  }
+
+  /** Visible pads in order; their index is the keyboard position. */
+  reindex() {
+    this.pads = this.allPads.filter((p) => !p.hidden);
+    this.allPads.forEach((p) => { p.index = -1; });
+    this.pads.forEach((p, i) => { p.index = i; });
+  }
+
+  padModel(slot, p, cueInfo) {
     return {
-      index, pack: p.pack, cue: p.cue, sustained: !!(cueInfo && cueInfo.sustained),
+      slot, index: -1, pack: p.pack, cue: p.cue, sustained: !!(cueInfo && cueInfo.sustained),
       params: p.params ? { ...p.params } : null,
       paramSpec: paramsFor(p.pack, p.cue) || (cueInfo && cueInfo.params) || null,
       seedLock: !!p.seedLock, seed: p.seed || 1, velocity: p.velocity == null ? 1 : p.velocity,
-      label: p.label || null, missing: !cueInfo,
+      label: p.label || null, missing: !cueInfo, hidden: !!p.hidden,
     };
+  }
+
+  // ── head: customize + menu ────────────────────────────────────────────
+
+  renderTools(hint, helpPanel) {
+    const old = this.head.querySelector('.board-tools'); if (old) old.remove();
+    const canCustomize = !this.isDaily();
+    const customize = canCustomize ? el('button', { class: `tool${this.customizing ? ' tool-primary' : ''}`, type: 'button', 'aria-pressed': String(this.customizing), onclick: () => this.setCustomizing(!this.customizing) }, this.customizing ? '✓ Done' : 'Customize') : null;
+    const hiddenCount = this.allPads.filter((p) => p.hidden).length;
+    this.head.append(el('div', { class: 'board-tools' },
+      customize,
+      canCustomize ? panelHelp(PANELS.customize.title, PANELS.customize.body) : null,
+      this.boardMenu(),
+      el('span', { class: 'tool-hint' }, hint + (hiddenCount && !this.customizing ? ` ${hiddenCount} hidden.` : '')),
+      helpPanel ? panelHelp(helpPanel.title, helpPanel.body) : null));
+  }
+
+  boardMenu() {
+    return menu({ label: 'Board menu', items: () => {
+      const b = this.board;
+      const items = [
+        { label: 'Pad size', options: SIZES, value: this.padSize, onSelect: (v) => { this.padSize = v; this.prefs.set('padSize', v); this.applyGridPrefs(); } },
+        { label: 'Key hints on pads', checked: this.showKeys, onSelect: (v) => { this.showKeys = v; this.prefs.set('showKeys', v); this.applyGridPrefs(); } },
+      ];
+      if (b) items.push({ label: 'Board size', options: BOARD_SIZES.map((n) => ({ label: `${n} pads`, value: n })), value: b.pads.length, onSelect: (n) => this.resizeBoard(Number(n)) });
+      items.push({ sep: true });
+      if (!b && !this.isDaily()) items.push({ label: 'Reset layout', hint: 'the pack\'s order, nothing hidden', disabled: Layouts.isEmptyLayout(this.layout), onSelect: () => this.resetLayout() });
+      items.push({ label: 'Stop all beds', onSelect: () => this.stopAllBeds(0.4) });
+      if (!b) items.push({ label: 'Save a copy to My boards', onSelect: () => this.copyBoard() });
+      if (b) {
+        items.push({ sep: true },
+          { label: 'Share as a code', onSelect: () => this.shareBoard() },
+          Share.configsAvailable() ? { label: 'Send to a device', onSelect: () => this.sendBoard() } : null,
+          { label: 'Export file', onSelect: () => Share.downloadJson(`${b.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'board'}.audio-tune-board.json`, packBoard(b)) },
+          { sep: true },
+          { label: 'Delete this board', danger: true, onSelect: () => this.deleteBoard() });
+      }
+      return items;
+    } });
+  }
+
+  setCustomizing(on) {
+    this.customizing = on;
+    this.applyGridPrefs();
+    this.renderGrid();
+    this.renderTools(this.board
+      ? (on ? 'Tap a pad to give it a sound; drag to move; the eye hides it.' : 'Customize to assign, move or hide pads. Hold a pad for its settings.')
+      : (on ? 'Drag a pad to move it; the eye hides it. The pack itself is untouched.' : 'Tap a pad, or use the keyboard rows. Hold a pad for its settings.'),
+      this.board ? null : PANELS.fleetBoard);
   }
 
   // ── grid ──────────────────────────────────────────────────────────────
 
-  renderGrid() { this.grid.replaceChildren(...this.pads.map((p) => (p.empty ? this.renderEmpty(p) : this.renderPad(p)))); }
+  renderGrid() {
+    const list = this.customizing ? this.allPads : this.pads;
+    this.grid.replaceChildren(...list.map((p) => (p.empty ? this.renderEmpty(p) : this.renderPad(p))));
+  }
 
   renderEmpty(p) {
     if (p.fixed) return el('div', { class: 'pad is-empty is-fixed', 'aria-hidden': 'true' });
-    return el('button', { class: 'pad is-empty', type: 'button', 'aria-label': `empty pad ${p.index + 1} — assign a sound`, onclick: () => this.openPadEditor(p.index) },
+    const btn = el('button', { class: 'pad is-empty', type: 'button', 'aria-label': `empty pad ${p.slot + 1} — assign a sound`, onclick: () => this.openPadEditor(p.slot) },
       el('span', { class: 'pad-key', 'aria-hidden': 'true' }, keyForPad(p.index)), el('span', { class: 'pad-name' }, '+'));
+    return this.customizing ? this.wrapForCustomize(p, btn) : btn;
   }
 
   renderPad(p) {
     const desc = Packs.get(p.pack) && Packs.get(p.pack).desc;
     const hue = desc ? desc.hue : 0;
     const btn = el('button', {
-      class: `pad${p.sustained ? ' is-bed' : ''}${p.paramSpec ? ' has-params' : ''}${p.missing ? ' is-missing' : ''}`,
-      type: 'button', dataset: { index: p.index }, style: this.isMine() ? `--hue:${hue}` : null,
-      'aria-label': `${p.label || p.cue}${p.sustained ? ' (bed)' : ''} — ${desc ? desc.name : p.pack}${p.missing ? ' (unavailable)' : ''}`,
+      class: `pad${p.sustained ? ' is-bed' : ''}${p.paramSpec ? ' has-params' : ''}${p.missing ? ' is-missing' : ''}${p.hidden ? ' is-hidden' : ''}`,
+      type: 'button', style: this.isMine() ? `--hue:${hue}` : null,
+      'aria-label': `${p.label || p.cue}${p.sustained ? ' (bed)' : ''} — ${desc ? desc.name : p.pack}${p.missing ? ' (unavailable)' : ''}${p.hidden ? ' (hidden)' : ''}`,
       'aria-pressed': p.sustained ? 'false' : null,
     },
-      el('span', { class: 'pad-key', 'aria-hidden': 'true' }, keyForPad(p.index)),
+      el('span', { class: 'pad-key', 'aria-hidden': 'true' }, p.index >= 0 ? keyForPad(p.index) : ''),
       el('span', { class: 'pad-name' }, p.label || p.cue),
       el('span', { class: 'pad-meta', 'aria-hidden': 'true' }, this.isMine() && desc ? desc.name : (p.sustained ? '∞ ' : '') + (p.paramSpec ? Object.keys(p.paramSpec).join(' · ') : '')),
     );
     let timer = null, longPressed = false;
     const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
-    btn.addEventListener('pointerdown', (e) => { if (e.button !== 0) return; longPressed = false; timer = setTimeout(() => { longPressed = true; this.openSheet(p); }, LONG_PRESS_MS); });
+    btn.addEventListener('pointerdown', (e) => { if (e.button !== 0 || this.customizing) return; longPressed = false; timer = setTimeout(() => { longPressed = true; this.openSheet(p); }, LONG_PRESS_MS); });
     btn.addEventListener('pointerup', cancel); btn.addEventListener('pointerleave', cancel); btn.addEventListener('pointercancel', cancel);
     btn.addEventListener('click', (e) => {
       if (longPressed) { longPressed = false; return; }
-      if (e.detail === 0) return;
-      if (this.editing) { this.openPadEditor(p.index); return; }
+      if (btn.dataset.dragged) { delete btn.dataset.dragged; return; }
+      if (e.detail === 0 && this.customizing) return;
+      if (this.customizing) { if (this.board) this.openPadEditor(p.slot); else this.openSheet(p); return; }
       this.hit(p, btn);
     });
     btn.addEventListener('contextmenu', (e) => { e.preventDefault(); this.openSheet(p); });
     p.el = btn;
-    return btn;
+    return this.customizing ? this.wrapForCustomize(p, btn) : btn;
+  }
+
+  /** In customize mode a pad gets handles: drag to move, ◀ ▶, and the eye. */
+  wrapForCustomize(p, btn) {
+    const pos = this.allPads.indexOf(p);
+    const wrap = el('div', { class: `pad-wrap${p.hidden ? ' is-hidden' : ''}`, dataset: { pos } }, btn);
+    const tools = el('div', { class: 'pad-tools' },
+      el('button', { class: 'mini', type: 'button', 'aria-label': 'move earlier', disabled: pos === 0, onclick: () => this.movePad(pos, pos - 1) }, '◀'),
+      p.fixed || p.empty ? null : el('button', { class: `mini${p.hidden ? ' is-on' : ''}`, type: 'button', 'aria-pressed': String(!!p.hidden), 'aria-label': p.hidden ? 'show pad' : 'hide pad', title: p.hidden ? 'show' : 'hide', onclick: () => this.toggleHidden(p) }, p.hidden ? '◌' : '◉'),
+      el('button', { class: 'mini', type: 'button', 'aria-label': 'move later', disabled: pos === this.allPads.length - 1, onclick: () => this.movePad(pos, pos + 1) }, '▶'));
+    wrap.append(tools);
+    // drag to move
+    let drag = null;
+    btn.addEventListener('pointerdown', (e) => { if (e.button !== 0) return; drag = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false, to: null }; btn.setPointerCapture(e.pointerId); });
+    btn.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 8) return;
+      drag.moved = true; btn.classList.add('is-dragging');
+      const under = document.elementFromPoint(e.clientX, e.clientY);
+      const w = under && under.closest ? under.closest('.pad-wrap') : null;
+      this.grid.querySelectorAll('.pad-wrap.is-over').forEach((x) => x.classList.remove('is-over'));
+      if (w && w !== wrap) { w.classList.add('is-over'); drag.to = Number(w.dataset.pos); } else drag.to = null;
+    });
+    const end = () => {
+      if (!drag) return;
+      const d = drag; drag = null;
+      btn.classList.remove('is-dragging');
+      this.grid.querySelectorAll('.pad-wrap.is-over').forEach((x) => x.classList.remove('is-over'));
+      if (d.moved) { btn.dataset.dragged = '1'; if (d.to != null && d.to !== pos) this.movePad(pos, d.to); }
+    };
+    btn.addEventListener('pointerup', end); btn.addEventListener('pointercancel', end);
+    return wrap;
+  }
+
+  async movePad(from, to) {
+    if (to < 0 || to >= this.allPads.length || from === to) return;
+    if (this.board) {
+      const b = this.board;
+      const data = this.allPads.map((p) => b.pads[p.slot]);
+      b.pads = Layouts.moveItem(data, from, to);
+      await this.saveBoard();
+      this.buildMine();
+    } else {
+      const names = Packs.get(this.boardId).pack.cues.map((c) => c.name);
+      this.layout = Layouts.moveName(this.layout, names, from, to);
+      await Layouts.save(this.boardId, this.layout);
+      this.buildFleet();
+    }
+    const moved = this.grid.children[to]; if (moved && moved.querySelector) { const b = moved.querySelector('.pad'); if (b) b.focus(); }
+  }
+
+  async toggleHidden(p) {
+    const hidden = !p.hidden;
+    if (this.board) {
+      const src = this.board.pads[p.slot];
+      if (src) { if (hidden) src.hidden = true; else delete src.hidden; }
+      await this.saveBoard();
+    } else {
+      const names = Packs.get(this.boardId).pack.cues.map((c) => c.name);
+      this.layout = Layouts.setHidden(this.layout, names, p.cue, hidden);
+      await Layouts.save(this.boardId, this.layout);
+    }
+    p.hidden = hidden;
+    if (hidden && this.beds.get(p)) { this.beds.get(p).stop(0.4); this.beds.delete(p); }
+    this.reindex();
+    this.renderGrid();
+    this.renderTools(this.board ? 'Tap a pad to give it a sound; drag to move; the eye hides it.' : 'Drag a pad to move it; the eye hides it. The pack itself is untouched.', this.board ? null : PANELS.fleetBoard);
+  }
+
+  async resetLayout() {
+    this.layout = Layouts.emptyLayout();
+    await Layouts.save(this.boardId, this.layout);
+    this.buildFleet();
+    this.renderTools('Tap a pad, or use the keyboard rows. Hold a pad for its settings.', PANELS.fleetBoard);
+    Share.toast('Layout reset to the pack\'s order', 'info');
   }
 
   hit(p, btn) {
     btn = btn || p.el;
     if (p.missing) return;
     if (p.sustained) {
-      const live = this.beds.get(p.index);
-      if (live && live.live) { live.stop(0.6); this.beds.delete(p.index); btn.setAttribute('aria-pressed', 'false'); btn.classList.remove('is-live'); }
-      else { const h = Packs.startBed(p.pack, p.cue, p.params); if (h.live) { this.beds.set(p.index, h); btn.setAttribute('aria-pressed', 'true'); btn.classList.add('is-live'); } }
+      const live = this.beds.get(p);
+      if (live && live.live) { live.stop(0.6); this.beds.delete(p); btn.setAttribute('aria-pressed', 'false'); btn.classList.remove('is-live'); }
+      else { const h = Packs.startBed(p.pack, p.cue, p.params); if (h.live) { this.beds.set(p, h); btn.setAttribute('aria-pressed', 'true'); btn.classList.add('is-live'); } }
       return;
     }
     const seed = p.seedLock ? p.seed : Packs.nextSeed();
@@ -249,7 +409,7 @@ export class BoardsView {
   }
 
   stopAllBeds(fade) {
-    for (const [i, h] of this.beds) { h.stop(fade); const p = this.pads[i]; if (p && p.el) { p.el.setAttribute('aria-pressed', 'false'); p.el.classList.remove('is-live'); } }
+    for (const [p, h] of this.beds) { h.stop(fade); if (p && p.el) { p.el.setAttribute('aria-pressed', 'false'); p.el.classList.remove('is-live'); } }
     this.beds.clear();
     if (this.riffPlaying) { clearTimeout(this.riffPlaying); this.riffPlaying = null; }
   }
@@ -258,14 +418,13 @@ export class BoardsView {
     if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
-    if (this.sheet) return;
+    if (this.sheet || document.querySelector('dialog[open]')) return;
     if (e.key === 'Escape') { this.stopAllBeds(0.4); return; }
     const i = padForKey(e.key);
     if (i < 0 || !this.pads[i] || this.pads[i].empty) return;
     e.preventDefault();
     this.hit(this.pads[i]);
   }
-  onKeyUp() {}
 
   // ── my boards: create / copy / save / delete / share ──────────────────
 
@@ -273,13 +432,21 @@ export class BoardsView {
     const b = Boards.newBoard(`Board ${this.mine.length + 1}`, 16);
     if (!(await Boards.save(b))) { Share.toast('Boards need the launcher store to save', 'error'); return; }
     this.mine = await Boards.list();
-    this.open(b.id);
-    this.editing = true;
+    await this.open(b.id);
+    this.setCustomizing(true);
     Share.toast('New board — tap a pad to give it a sound', 'success');
   }
 
-  async copyFleetBoard(desc, pack) {
-    const b = Boards.fromPack(desc, pack, defaultParams);
+  /** A user copy of the current fleet board or kit, in the order shown, hidden pads left out. */
+  async copyBoard() {
+    let b;
+    if (this.isDaily()) {
+      b = Boards.newBoard(this.kit.name, 16); b.pads = this.kit.pads.map((p) => (p ? { ...p } : null));
+    } else {
+      const entry = Packs.get(this.boardId);
+      const cues = this.pads.map((p) => entry.pack.cues.find((c) => c.name === p.cue)).filter(Boolean);
+      b = Boards.fromPack(entry.desc, { cues }, defaultParams);
+    }
     if (!(await Boards.save(b))) { Share.toast('Boards need the launcher store to save', 'error'); return; }
     this.mine = await Boards.list();
     this.open(b.id);
@@ -287,6 +454,15 @@ export class BoardsView {
   }
 
   async saveBoard() { if (this.board) await Boards.save(this.board); }
+
+  async resizeBoard(len) {
+    const b = this.board; if (!b) return;
+    const next = new Array(len).fill(null);
+    b.pads.slice(0, len).forEach((p, i) => { next[i] = p; });
+    b.pads = next;
+    await this.saveBoard();
+    this.buildMine();
+  }
 
   async deleteBoard() {
     if (!this.board) return;
@@ -316,19 +492,12 @@ export class BoardsView {
   }
 
   async importBoard() {
-    const dlg = el('dialog', { class: 'sheet', 'aria-label': 'Import a board' });
     const codeIn = el('textarea', { class: 'code-in', rows: 3, placeholder: 'Paste a board or riff code…', 'aria-label': 'code' });
-    const body = el('div', { class: 'sheet-body' },
-      el('h3', { class: 'sheet-title' }, 'Import'),
-      el('p', { class: 'sheet-note' }, 'A board code, a riff code, or a board file someone exported.'),
-      codeIn,
-      el('div', { class: 'sheet-actions' },
-        el('button', { class: 'tool', type: 'button', onclick: async () => { const obj = await Share.openJson(); if (obj) { dlg.close(); this.importObject(obj); } } }, 'Open file…'),
-        el('button', { class: 'tool tool-primary', type: 'button', onclick: () => { const d = Share.decodeCode(codeIn.value); dlg.close(); if (!d) { Share.toast('That is not a code we understand', 'error'); return; } this.importObject(d.data); } }, 'Import code'),
-        el('button', { class: 'tool', type: 'button', onclick: () => dlg.close() }, 'Cancel')));
-    dlg.append(body);
-    dlg.addEventListener('close', () => dlg.remove());
-    document.body.append(dlg); dlg.showModal();
+    const dlg = sheet({ title: 'Import', note: 'A board code, a riff code, or a board file someone exported.', body: codeIn, actions: [
+      el('button', { class: 'tool', type: 'button', onclick: async () => { const obj = await Share.openJson(); if (obj) { dlg.close(); this.importObject(obj); } } }, 'Open file…'),
+      el('button', { class: 'tool', type: 'button', onclick: () => dlg.close() }, 'Cancel'),
+      el('button', { class: 'tool tool-primary', type: 'button', onclick: () => { const d = Share.decodeCode(codeIn.value); dlg.close(); if (!d) { Share.toast('That is not a code we understand', 'error'); return; } this.importObject(d.data); } }, 'Import code'),
+    ] });
   }
 
   async importObject(obj) {
@@ -344,84 +513,64 @@ export class BoardsView {
 
   // ── pad editor (my boards) ────────────────────────────────────────────
 
-  openPadEditor(index) {
+  openPadEditor(slot) {
     if (!this.board) return;
     this.closeSheet();
     const b = this.board;
-    const cur = b.pads[index];
-    const dlg = el('dialog', { class: 'sheet sheet-wide', 'aria-label': `pad ${index + 1}` });
-    const body = el('div', { class: 'sheet-body' });
-    const packSel = el('select', { 'aria-label': 'game' }, el('option', { value: '' }, 'Game…'), ...Packs.list().map((p) => el('option', { value: p.id, selected: cur && cur.pack === p.id }, p.name)));
-    const cueGrid = el('div', { class: 'cue-grid', role: 'listbox', 'aria-label': 'sounds' });
+    const cur = b.pads[slot];
     const label = el('input', { class: 'song-name', type: 'text', maxlength: 24, placeholder: 'label (optional)', value: cur && cur.label ? cur.label : '', 'aria-label': 'pad label' });
-    let picked = cur ? { pack: cur.pack, cue: cur.cue } : null;
-    const fillCues = async () => {
-      cueGrid.replaceChildren();
-      if (!packSel.value) return;
-      cueGrid.append(el('span', { class: 'ctl-hint' }, 'Loading…'));
-      const entry = await Packs.load(packSel.value);
-      cueGrid.replaceChildren();
-      if (entry.status !== 'ready') { cueGrid.append(el('span', { class: 'board-status is-error' }, `Pack unavailable — ${entry.error}`)); return; }
-      for (const c of entry.pack.cues) {
-        const chip = el('button', { class: `cue-chip${picked && picked.pack === entry.desc.id && picked.cue === c.name ? ' is-picked' : ''}`, type: 'button', role: 'option', 'aria-selected': String(!!(picked && picked.pack === entry.desc.id && picked.cue === c.name)), title: noteFor(entry.desc.id, c.name),
-          onclick: () => { picked = { pack: entry.desc.id, cue: c.name }; cueGrid.querySelectorAll('.cue-chip').forEach((x) => { x.classList.remove('is-picked'); x.setAttribute('aria-selected', 'false'); }); chip.classList.add('is-picked'); chip.setAttribute('aria-selected', 'true'); if (!c.sustained) Packs.fire(entry.desc.id, c.name, { params: defaultParams(entry.desc.id, c.name) }); } },
-          c.name, c.sustained ? el('small', {}, ' ∞') : null);
-        cueGrid.append(chip);
-      }
-    };
-    packSel.addEventListener('change', fillCues);
-    body.append(
-      el('h3', { class: 'sheet-title' }, `Pad ${index + 1}`, el('small', {}, ` · key ${keyForPad(index) || '—'}`), panelHelp(PANELS.padEditor.title, PANELS.padEditor.body)),
-      el('div', { class: 'row' }, packSel, label),
-      cueGrid,
-      el('div', { class: 'sheet-actions' },
-        cur ? el('button', { class: 'tool', type: 'button', onclick: () => { b.pads[index] = null; this.saveBoard(); dlg.close(); this.openMine(); } }, 'Clear pad') : null,
+    const picker = soundPicker({ packs: Packs.list(), picked: cur ? { pack: cur.pack, cue: cur.cue } : null, label: 'sounds', onPick: () => {} });
+    const pos = this.allPads.findIndex((p) => p.slot === slot);
+    const dlg = sheet({ title: `Pad ${pos + 1}`, note: 'Pick a game, then tap a sound to hear it and choose it.', wide: true, label: `pad ${pos + 1}`,
+      body: [picker, el('div', { class: 'row' }, label, panelHelp(PANELS.padEditor.title, `${PANELS.padEditor.body} ${PANELS.picker.body}`))],
+      actions: [
+        cur ? el('button', { class: 'tool', type: 'button', onclick: () => { b.pads[slot] = null; this.saveBoard(); dlg.close(); this.buildMine(); } }, 'Clear pad') : null,
         el('button', { class: 'tool', type: 'button', onclick: () => dlg.close() }, 'Cancel'),
         el('button', { class: 'tool tool-primary', type: 'button', onclick: () => {
+          const picked = picker.value;
           if (!picked) { Share.toast('Pick a sound first', 'info'); return; }
           const keep = cur && cur.pack === picked.pack && cur.cue === picked.cue ? cur : null;
-          b.pads[index] = { pack: picked.pack, cue: picked.cue, params: keep ? keep.params : defaultParams(picked.pack, picked.cue), label: label.value.trim().slice(0, 24) || null, velocity: keep ? keep.velocity : 1, seedLock: keep ? keep.seedLock : false, seed: keep ? keep.seed : 1 };
-          this.saveBoard(); dlg.close(); this.openMine();
-        } }, 'Save pad')));
-    dlg.append(body);
-    dlg.addEventListener('close', () => { if (this.sheet === dlg) this.sheet = null; dlg.remove(); });
-    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
-    document.body.append(dlg); this.sheet = dlg; dlg.showModal();
-    if (packSel.value) fillCues();
+          b.pads[slot] = { pack: picked.pack, cue: picked.cue, params: keep ? keep.params : defaultParams(picked.pack, picked.cue), label: label.value.trim().slice(0, 24) || null, velocity: keep ? keep.velocity : 1, seedLock: keep ? keep.seedLock : false, seed: keep ? keep.seed : 1, ...(cur && cur.hidden ? { hidden: true } : {}) };
+          this.saveBoard(); dlg.close(); this.buildMine();
+        } }, 'Save pad'),
+      ] });
+    dlg.addEventListener('close', () => { if (this.sheet === dlg) this.sheet = null; });
+    this.sheet = dlg;
   }
 
   // ── pad sheet (settings) ──────────────────────────────────────────────
 
   openSheet(p) {
     this.closeSheet();
-    if (p.empty) { this.openPadEditor(p.index); return; }
+    if (p.empty) { this.openPadEditor(p.slot); return; }
     const desc = Packs.get(p.pack) && Packs.get(p.pack).desc;
-    const dlg = el('dialog', { class: 'sheet', 'aria-label': `${p.cue} settings` });
-    const body = el('div', { class: 'sheet-body' });
-    body.append(el('h3', { class: 'sheet-title' }, p.label || p.cue, el('small', {}, ` · ${desc ? desc.name : p.pack}`)), el('p', { class: 'sheet-note' }, noteFor(p.pack, p.cue)));
-    const persist = () => { if (this.board && this.board.pads[p.index]) { Object.assign(this.board.pads[p.index], { params: p.params, velocity: p.velocity, seedLock: p.seedLock, seed: p.seed }); this.saveBoard(); } };
-    const live = () => this.beds.get(p.index);
+    const body = [];
+    const persist = () => { if (this.board && this.board.pads[p.slot]) { Object.assign(this.board.pads[p.slot], { params: p.params, velocity: p.velocity, seedLock: p.seedLock, seed: p.seed }); this.saveBoard(); } };
+    const live = () => this.beds.get(p);
     if (p.paramSpec) {
       for (const [k, def] of Object.entries(p.paramSpec)) {
         const set = (v) => { p.params = p.params || {}; p.params[k] = v; persist(); const h = live(); if (h && h.live) h.retune(p.params, 0.8); };
         const help = `The game passes \`${k}\` to this cue per play.`;
-        if (Array.isArray(def)) body.append(control({ kind: 'count', name: k, label: k, value: p.params ? p.params[k] : def[3], range: [def[0], def[1], def[2]], help, onChange: set }));
-        else if (def.options) body.append(control({ kind: 'choice', name: k, label: k, value: p.params ? p.params[k] : def.options[0], options: def.options, help, onChange: set }));
-        else if (def.bool) body.append(control({ kind: 'toggle', name: k, label: k, value: !!(p.params && p.params[k]), help, onChange: set }));
+        if (Array.isArray(def)) body.push(control({ kind: 'count', name: k, label: k, value: p.params ? p.params[k] : def[3], range: [def[0], def[1], def[2]], help, onChange: set }));
+        else if (def.options) body.push(control({ kind: 'choice', name: k, label: k, value: p.params ? p.params[k] : def.options[0], options: def.options, help, onChange: set }));
+        else if (def.bool) body.push(control({ kind: 'toggle', name: k, label: k, value: !!(p.params && p.params[k]), help, onChange: set }));
       }
     }
     if (!p.sustained) {
-      body.append(control({ kind: 'gain', name: 'velocity', label: 'loudness', value: p.velocity, range: [0.05, 1, 0.01], help: 'How hard this pad hits.', onChange: (v) => { p.velocity = v; persist(); } }));
-      body.append(control({ kind: 'toggle', name: 'seedLock', label: 'same every time', value: p.seedLock, help: 'Locks the seed so this pad repeats exactly. Off, every hit is a fresh take — hear what per-play variation buys.', onChange: (v) => { p.seedLock = v; persist(); } }));
+      body.push(control({ kind: 'gain', name: 'velocity', label: 'loudness', value: p.velocity, range: [0.05, 1, 0.01], help: 'How hard this pad hits.', onChange: (v) => { p.velocity = v; persist(); } }));
+      body.push(control({ kind: 'toggle', name: 'seedLock', label: 'same every time', value: p.seedLock, help: 'Locks the seed so this pad repeats exactly. Off, every hit is a fresh take — hear what per-play variation buys.', onChange: (v) => { p.seedLock = v; persist(); } }));
     }
-    if (this.board) body.append(el('button', { class: 'tool', type: 'button', onclick: () => { dlg.close(); this.openPadEditor(p.index); } }, 'Change sound…'));
-    body.append(el('div', { class: 'sheet-actions' },
+    if (!this.board) body.push(el('p', { class: 'sheet-note' }, this.isDaily()
+      ? 'Settings here last while the kit is open. Save a copy to keep them.'
+      : `${desc ? desc.name : 'This'} is the game's own pack, and it is read-only: settings here last until you leave the board. Save a copy to My boards to keep them.`));
+    if (this.board) body.push(el('button', { class: 'tool', type: 'button', onclick: () => { dlg.close(); this.openPadEditor(p.slot); } }, 'Change sound…'));
+    const dlg = sheet({ title: p.label || p.cue, note: noteFor(p.pack, p.cue) || (desc ? desc.name : p.pack), label: `${p.cue} settings`, body, actions: [
       el('button', { class: 'tool', type: 'button', onclick: () => this.hit(p) }, p.sustained ? (live() && live().live ? 'Stop' : 'Start') : 'Play'),
-      el('button', { class: 'tool tool-primary', type: 'button', onclick: () => this.closeSheet() }, 'Done')));
-    dlg.append(body);
-    dlg.addEventListener('close', () => { if (this.sheet === dlg) this.sheet = null; dlg.remove(); });
-    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
-    document.body.append(dlg); this.sheet = dlg; dlg.showModal();
+      el('button', { class: 'tool tool-primary', type: 'button', onclick: () => this.closeSheet() }, 'Done'),
+    ] });
+    dlg.querySelector('.sheet-title').append(el('small', {}, ` · ${desc ? desc.name : p.pack}`));
+    dlg.addEventListener('close', () => { if (this.sheet === dlg) this.sheet = null; });
+    this.sheet = dlg;
   }
 
   closeSheet() { if (this.sheet) { try { this.sheet.close(); } catch (e) { /* noop */ } this.sheet = null; } }
