@@ -45,7 +45,7 @@ system in five short pages.
 # → http://127.0.0.1:4791/audio-tune/
 
 npm test                                  # unit tests + artifact check
-node tools/smoke.mjs                      # every fleet pack loads, every cue is audible
+node tools/audio-smoke.mjs                      # every fleet pack loads, every cue is audible
 npm run acceptance -- http://127.0.0.1:4791/audio-tune/   # from the launcher repo
 ```
 

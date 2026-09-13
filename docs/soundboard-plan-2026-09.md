@@ -12,7 +12,7 @@ live record, undo, songs autosaved to `Arcade.store`. WP4 shipped 2026-09-12
 (my boards with a pad editor, share / send / import for boards and songs,
 riff codes, the cue composer publishing "My sounds" as a pack). WP5 shipped
 2026-09-12 (render to WAV, daily kit, jam, one record). WP6 shipped
-2026-09-12: `tools/smoke.mjs` — the fleet-wide "every pack loads, every cue
+2026-09-12: `tools/audio-smoke.mjs` — the fleet-wide "every pack loads, every cue
 is audible" gate — first-open hint, README. UX pass 2026-09-12 after first real
 use: [ux-pass-2026-09.md](ux-pass-2026-09.md) — board customization (order,
 hide, size, one menu), essentials-then-everything on every card, the shared
@@ -525,7 +525,7 @@ audio-tune/
     views/              boards.js  lab.js  composer.js  sequencer.js
   tests/                node --test for every pure module
   tools/
-    smoke.mjs           Playwright: every pack loads, every cue renders audibly
+    audio-smoke.mjs     Playwright: every pack loads, every cue renders audibly
   docs/
     soundboard-plan-2026-09.md   this file
 ```
@@ -538,7 +538,7 @@ audio-tune/
   song compaction/expansion round-trip, manifest/registry logic with the
   launcher's synthetic pack (`tools/fixtures/soundpack-test/pack.js`) as the
   fixture — so the loader is tested against a pack that is not any game's.
-- **Smoke (`tools/smoke.mjs`, Playwright, opt-in in fleet CI)**: stage the
+- **Smoke (`tools/audio-smoke.mjs`, Playwright, opt-in in fleet CI)**: stage the
   launcher plus every fleet repo with `dev.sh`, open `/audio-tune/`, and for
   each manifest pack assert it registered, then render every cue and bed
   through an `OfflineAudioContext` and assert peak > −40 dBFS and < −1 dBFS
