@@ -39,6 +39,7 @@ export function checkPad(p, { packs = null } = {}, what = 'pad') {
   if (p.velocity != null && !(p.velocity >= 0 && p.velocity <= 1)) fail(what, 'velocity');
   if (p.seedLock != null && typeof p.seedLock !== 'boolean') fail(what, 'seedLock');
   if (p.seed != null && !(Number.isInteger(p.seed) && p.seed >= 0 && p.seed < 1e7)) fail(what, 'seed');
+  if (p.hidden != null && typeof p.hidden !== 'boolean') fail(what, 'hidden');
 }
 
 /** A stored / imported board. */
@@ -56,7 +57,8 @@ export function validateBoard(x, opts = {}) {
 export function packBoard(board) {
   return {
     v: BOARD_VERSION, n: board.name, s: board.pads.length,
-    p: board.pads.map((p) => (p ? [p.pack, p.cue, p.params || 0, p.label || 0, p.velocity == null ? 1 : +p.velocity.toFixed(2)] : 0)),
+    // a hidden pad carries a sixth element; older codes have five
+    p: board.pads.map((p) => (p ? [p.pack, p.cue, p.params || 0, p.label || 0, p.velocity == null ? 1 : +p.velocity.toFixed(2), ...(p.hidden ? [1] : [])] : 0)),
   };
 }
 
@@ -68,8 +70,8 @@ export function unpackBoard(c, mkId, opts = {}) {
     v: BOARD_VERSION, id: mkId(), name: typeof c.n === 'string' ? c.n.slice(0, 40) || 'Imported board' : 'Imported board',
     pads: c.p.map((e) => {
       if (!Array.isArray(e)) return null;
-      const [pack, cue, params, label, velocity] = e;
-      return { pack, cue, params: params && typeof params === 'object' ? params : null, label: typeof label === 'string' ? label : null, velocity: typeof velocity === 'number' ? velocity : 1, seedLock: false, seed: 1 };
+      const [pack, cue, params, label, velocity, hidden] = e;
+      return { pack, cue, params: params && typeof params === 'object' ? params : null, label: typeof label === 'string' ? label : null, velocity: typeof velocity === 'number' ? velocity : 1, seedLock: false, seed: 1, ...(hidden === 1 ? { hidden: true } : {}) };
     }),
     updated: Date.now(),
   };

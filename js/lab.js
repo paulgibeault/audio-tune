@@ -37,7 +37,7 @@ export function buildParams(name, state, opts = {}, rnd = null) {
     if (e.explicitDur && k === 'dur') continue;
     let v = state[k];
     if (isOff(def, v)) continue;
-    if (def.preset) { p[k] = BODY_PRESETS[v] || BODY_PRESETS[def.preset[0]]; continue; }
+    if (def.preset) { p[k] = Array.isArray(v) ? v : (BODY_PRESETS[v] || BODY_PRESETS[def.preset[0]]); continue; }
     if (pitched.has(k) && typeof v === 'number') {
       v *= ratio;
       if (rnd && opts.cents) v *= cents(rnd, opts.cents);
@@ -67,7 +67,7 @@ export function snippet(name, state, opts = {}) {
     if (e.explicitDur && k === 'dur') continue;
     const v = state[k];
     if (isOff(def, v)) continue;
-    if (def.preset) { parts.push(`${k}: ${formatPartials(BODY_PRESETS[v] || [])}`); continue; }
+    if (def.preset) { parts.push(`${k}: ${formatPartials(Array.isArray(v) ? v : (BODY_PRESETS[v] || []))}`); continue; }
     if (def.options) { parts.push(`${k}: '${v}'`); continue; }
     if (pitched.has(k) && opts.cents) { parts.push(`${k}: ${num(v)} * S.cents(r, ${opts.cents})`); continue; }
     parts.push(`${k}: ${num(v)}`);
@@ -77,7 +77,7 @@ export function snippet(name, state, opts = {}) {
   return `S.${name}(ctx, o, t, ${dur}{ ${parts.join(', ')} });`;
 }
 
-function formatPartials(list) {
+export function formatPartials(list) {
   return '[' + list.map((pt) => '{ ' + Object.entries(pt).map(([k, v]) => `${k}: ${num(v)}`).join(', ') + ' }').join(', ') + ']';
 }
 

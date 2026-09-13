@@ -84,3 +84,34 @@ test('cueSource writes vary as the fleet does', () => {
   assert.match(src, /S\.body\(ctx, o, t \+ 0\.004, \{ f0: 200 \* S\.cents\(r, 15\), gain: 0\.3, partials: PARTIALS_WOOD, type: 'sine' \}\);/);
   assert.match(src, /return 0\.1;\n\},$/);
 });
+
+test('fromRecipe: a tweaked take becomes a valid user cue; fleet recipe untouched', async () => {
+  const { fromRecipe } = await import('../js/user-cues.js');
+  const recipe = { seed: 1, layers: [
+    { i: 0, el: 'strike', at: 0, dur: null, params: { dur: 0.02, hp: 1400, gain: 0.22, seed: 123 }, varied: ['seed'], atVaried: false },
+    { i: 1, el: 'body', at: 0, dur: null, params: { f0: 175, gain: 0.3, partials: [{ ratio: 1, gain: 1, decay: 2 }, { ratio: 2.7, gain: 0.3, decay: 1 }] }, varied: ['f0'], atVaried: false },
+    { i: 2, el: 'drone', at: 0.1, dur: 8, params: { f: 55, gain: 0.05 }, varied: [], atVaried: false },
+  ] };
+  const before = JSON.stringify(recipe);
+  const cue = fromRecipe('Temple Bell!', recipe, { overrides: { 1: { params: { f0: 220 }, at: 0.004 }, 2: { dur: 3 } }, send: 0.55 });
+  assert.equal(validateUserCue(cue), true);
+  assert.equal(cue.name, 'temple-bell');
+  assert.equal(cue.send, 0.55);
+  assert.equal(cue.layers[0].params.seed, undefined, 'seeds are drawn per play, never stored');
+  assert.equal(cue.layers[1].params.f0, 220); assert.equal(cue.layers[1].at, 0.004);
+  assert.deepEqual(cue.layers[1].params.partials.length, 2);
+  assert.equal(cue.layers[2].dur, 3); assert.equal('dur' in cue.layers[2].params, false);
+  assert.equal(JSON.stringify(recipe), before, 'the recorded recipe is not mutated');
+  const big = { seed: 1, layers: new Array(13).fill(0).map((_, i) => ({ i, el: 'strike', at: 0, params: {}, varied: [] })) };
+  assert.throws(() => fromRecipe('x', big), /13 layers/);
+});
+
+test('a dragged partial table plays and prints as itself, not as the wood fallback', () => {
+  const { lib } = stubLib();
+  const table = [{ ratio: 1, gain: 1, decay: 0.5 }, { ratio: 3.1, gain: 0.2, decay: 0.2 }];
+  const L = { el: 'body', at: 0, params: { f0: 200, gain: 0.3, partials: table, type: 'sine' }, vary: {} };
+  assert.deepEqual(layerParams(L, lib, fixedR(0.5), BODY_PRESETS).partials, table);
+  const src = cueSource({ v: 1, id: 'c', name: 'ring', layers: [L] });
+  assert.match(src, /partials: \[\{ ratio: 1, gain: 1, decay: 0\.5 \}, \{ ratio: 3\.1, gain: 0\.2, decay: 0\.2 \}\]/);
+  assert.doesNotMatch(src, /PARTIALS_/);
+});

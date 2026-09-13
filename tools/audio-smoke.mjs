@@ -9,7 +9,7 @@
 // even if its own game has no audio test. That gate did not exist before.
 //
 //   ./dev.sh ../audio-tune ../moon-lit … ../pi-game     (from the launcher repo)
-//   node tools/smoke.mjs --base http://127.0.0.1:4791
+//   node tools/audio-smoke.mjs --base http://127.0.0.1:4791
 //
 // Playwright is borrowed from the launcher checkout (it is a devDependency
 // there); pass --playwright <dir> to point elsewhere.
