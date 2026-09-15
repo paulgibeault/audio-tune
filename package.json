@@ -1,6 +1,6 @@
 {
   "name": "audio-tune",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "private": true,
   "description": "Soundboard, sound lab and sequencer for Paul's Arcade, built on the fleet's shipped sound packs.",
   "engines": {
