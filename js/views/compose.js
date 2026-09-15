@@ -46,7 +46,7 @@ export class ComposeView {
       title: 'Put sounds on a grid',
       lines: [
         'Add a sound — any game\'s — and it becomes a row. Tap a cell to place a hit; drag up or down on it for loudness; drag across a row to paint. Play loops it; Space plays and stops.',
-        'Tempo and Tap are on the transport; swing and the grid\'s size are under Grid. Patterns are sections; once you have two, the chain puts them in order.',
+        'Tempo and Tap are on the transport; swing and the grid\'s size are under Grid. Patterns are sections: duplicate the one you are on for a fill, and the chain puts them in order.',
         'Songs save themselves. Everything else about a song — switching, sharing, rendering to WAV — is in its ⋯ menu.',
       ],
     });
@@ -245,17 +245,23 @@ export class ComposeView {
   }
 
   renderPatterns() {
-    const s = this.song;
+    const s = this.song, cur = this.pattern();
+    const full = s.patterns.length >= Song.MAX_PATTERNS;
+    const open = (p) => { this.patternId = p.id; this.renderPatterns(); this.renderGrid(); };
     const tabs = el('div', { class: 'pattern-tabs', role: 'tablist', 'aria-label': 'Patterns' },
-      ...s.patterns.map((p) => el('button', { class: 'subtab', role: 'tab', type: 'button', 'aria-selected': String(p.id === this.patternId), onclick: () => { this.patternId = p.id; this.renderPatterns(); this.renderGrid(); } }, p.name)),
-      el('button', { class: 'tool', type: 'button', onclick: () => this.mutate((song) => { const p = Song.addPattern(song); this.patternId = p.id; }, { structural: true }) }, '+ Pattern'),
-      s.patterns.length > 1 ? el('button', { class: 'tool', type: 'button', onclick: () => this.mutate((song) => { Song.removePattern(song, this.patternId); this.patternId = song.patterns[0].id; }, { structural: true }) }, 'Delete pattern') : null,
+      ...s.patterns.map((p) => el('button', { class: 'subtab', role: 'tab', type: 'button', 'aria-selected': String(p.id === cur.id), onclick: () => open(p) }, p.name)));
+    const tools = el('div', { class: 'pattern-tools' },
+      el('button', { class: 'tool', type: 'button', disabled: full, title: full ? `A song holds ${Song.MAX_PATTERNS} patterns` : `a copy of ${cur.name}, added to the chain`,
+        onclick: () => this.mutate((song) => { const p = Song.duplicatePattern(song, cur.id); if (p) this.patternId = p.id; }, { structural: true }) }, `⧉ Duplicate ${cur.name}`),
+      el('button', { class: 'tool', type: 'button', disabled: full, title: full ? `A song holds ${Song.MAX_PATTERNS} patterns` : 'a blank pattern, added to the chain',
+        onclick: () => this.mutate((song) => { const p = Song.addPattern(song); if (p) this.patternId = p.id; }, { structural: true }) }, '+ Empty'),
+      s.patterns.length > 1 ? el('button', { class: 'tool', type: 'button', onclick: () => this.mutate((song) => { Song.removePattern(song, cur.id); this.patternId = song.patterns[0].id; }, { structural: true }) }, `Delete ${cur.name}`) : null,
     );
     this.patternCard.replaceChildren(
       el('h2', { class: 'card-h' }, 'Patterns', panelHelp(PANELS.patterns.title, PANELS.patterns.body)),
-      tabs);
+      tabs, tools);
     if (s.patterns.length <= 1) {
-      this.patternCard.append(el('p', { class: 'card-sub' }, 'One pattern loops. Add a second — a fill, a chorus — and the chain appears here to put them in order.'));
+      this.patternCard.append(el('p', { class: 'card-sub' }, `One pattern loops. Duplicate ${cur.name} to start a fill from this groove, or add an empty one; either joins the chain, which appears here to put them in order.`));
       return;
     }
     const chain = el('div', { class: 'chain', 'aria-label': 'Song chain' });
@@ -263,7 +269,7 @@ export class ComposeView {
       const p = s.patterns.find((x) => x.id === c.pattern);
       chain.append(el('div', { class: `chain-chip${this.currentRes && this.currentRes.chainPos === i ? ' is-playing' : ''}` },
         el('button', { class: 'chip-move', type: 'button', 'aria-label': 'move earlier', disabled: i === 0, onclick: () => this.mutate((song) => Song.chainMove(song, i, i - 1), { structural: true }) }, '◀'),
-        el('span', { class: 'chip-name' }, p ? p.name : '?'),
+        el('button', { class: 'chip-name chip-open', type: 'button', title: `edit ${p ? p.name : '?'}`, onclick: () => { if (p) open(p); } }, p ? p.name : '?'),
         el('button', { class: 'chip-rep', type: 'button', 'aria-label': 'fewer repeats', onclick: () => this.mutate((song) => Song.chainRepeat(song, i, c.repeat - 1), { structural: true }) }, '−'),
         el('span', { class: 'chip-count' }, `×${c.repeat}`),
         el('button', { class: 'chip-rep', type: 'button', 'aria-label': 'more repeats', onclick: () => this.mutate((song) => Song.chainRepeat(song, i, c.repeat + 1), { structural: true }) }, '+'),
@@ -271,11 +277,13 @@ export class ComposeView {
         el('button', { class: 'chip-x', type: 'button', 'aria-label': 'remove from chain', disabled: s.chain.length <= 1, onclick: () => this.mutate((song) => Song.chainRemove(song, i), { structural: true }) }, '×'),
       ));
     });
-    const addSel = el('select', { 'aria-label': 'add pattern to chain', onchange: (e) => { if (e.target.value) { this.mutate((song) => Song.chainAdd(song, e.target.value), { structural: true }); } } },
-      el('option', { value: '' }, '+ add to chain…'), ...s.patterns.map((p) => el('option', { value: p.id }, p.name)));
+    const chainFull = s.chain.length >= 64;
+    const adders = el('div', { class: 'chain-add', 'aria-label': 'add a pattern to the chain' },
+      el('span', { class: 'ctl-hint' }, 'add'),
+      ...s.patterns.map((p) => el('button', { class: 'tool', type: 'button', disabled: chainFull, title: `play ${p.name} again at the end`, onclick: () => this.mutate((song) => Song.chainAdd(song, p.id), { structural: true }) }, `+${p.name}`)));
     this.patternCard.append(
       el('h3', { class: 'card-h chain-h' }, 'Chain', panelHelp(PANELS.chain.title, PANELS.chain.body)),
-      el('div', { class: 'row' }, chain, addSel),
+      chain, adders,
     );
   }
 
@@ -291,16 +299,16 @@ export class ComposeView {
     }
     grid.append(head);
     s.tracks.forEach((t, ti) => grid.append(this.renderRow(t, ti, p, len)));
-    const add = el('button', { class: 'tool tool-primary', type: 'button', onclick: () => this.addTrackSheet() }, '+ Add a sound');
-    this.gridCard.replaceChildren(
+    const add = el('button', { class: 'tool tool-primary', type: 'button', onclick: () => this.addTrackSheet() }, '+ Add sounds');
+    this.gridCard.replaceChildren(...[
       el('div', { class: 'song-head' },
         el('h2', { class: 'card-h' }, s.patterns.length > 1 ? `Pattern ${p.name}` : 'Grid', panelHelp(PANELS.grid.title, PANELS.grid.body)),
         add, panelHelp(PANELS.track.title, PANELS.track.body)),
       s.tracks.length
         ? el('p', { class: 'card-sub' }, 'Tap a cell to place a hit; drag up or down on it for loudness; drag across a row to paint. Tap a track\'s name for its settings. Keys 1–9 play the tracks.')
         : null,
-      s.tracks.length ? el('div', { class: 'seq-scroll' }, grid) : el('div', { class: 'seq-empty' }, 'No tracks yet. Add a sound from any game and it becomes a row here.'),
-    );
+      s.tracks.length ? el('div', { class: 'seq-scroll' }, grid) : el('div', { class: 'seq-empty' }, 'No tracks yet. Add sounds — from one game, or found across all of them — and each becomes a row here.'),
+    ].filter(Boolean));
     this.grid = grid;
   }
 
@@ -373,23 +381,32 @@ export class ComposeView {
 
   dirtyStep() { this.song.updated = Date.now(); this.scheduleSave(); }
 
-  /** The shared picker, as a sheet: tap a sound to hear it, Add to make it a row. */
+  /** The shared picker as a tray: tap a sound to hear it, Add makes it a row, and the sheet stays open until Done. */
   addTrackSheet() {
     const lastPack = this.prefs.get('trackPack') || (this.song.tracks.length ? this.song.tracks[this.song.tracks.length - 1].pad.pack : '');
+    const added = [];
+    const inSong = (pack, cue) => this.song.tracks.filter((t) => t.pad.pack === pack && t.pad.cue === cue).length;
+    const status = el('p', { class: 'sheet-note picker-added', 'aria-live': 'polite' });
     const add = el('button', { class: 'tool tool-primary', type: 'button', disabled: true, onclick: () => {
       const v = picker.value; if (!v) return;
-      const entry = Packs.get(v.pack); const cue = entry && entry.pack.cues.find((c) => c.name === v.cue);
+      const entry = Packs.get(v.pack); const cue = entry && entry.pack && entry.pack.cues.find((c) => c.name === v.cue);
       if (!cue) return;
+      if (this.song.tracks.length >= 32) { Share.toast('A song holds 32 tracks', 'info'); return; }
       this.prefs.set('trackPack', v.pack);
       this.mutate((song) => Song.addTrack(song, Song.newTrack({ pack: v.pack, cue: cue.name, params: defaultParams(v.pack, cue.name) })), { structural: true });
-      dlg.close();
-      Share.toast(`${cue.name} is track ${this.song.tracks.length}`, 'success', 1600);
-    } }, 'Add as a track');
-    const picker = soundPicker({ packs: Packs.list(), picked: lastPack ? { pack: lastPack, cue: null } : null, filter: (c) => !c.sustained, label: 'sounds to add',
-      onPick: () => { add.disabled = false; } });
-    const dlg = sheet({ title: 'Add a sound', note: 'A game, then one of its sounds — tap to hear it. Beds are not tracks; everything else is.', body: [picker, panelHelp(PANELS.picker.title, PANELS.picker.body)], wide: true, actions: [
-      el('button', { class: 'tool', type: 'button', onclick: () => dlg.close() }, 'Cancel'), add,
+      added.push(cue.name);
+      const n = this.song.tracks.length;
+      status.textContent = `Added: ${added.join(', ')} · ${n} track${n === 1 ? '' : 's'} in the song.`;
+      add.textContent = `+ Add ${cue.name} again`;
+      picker.refresh();
+    } }, '+ Add');
+    const picker = soundPicker({ packs: Packs.list(), picked: lastPack ? { pack: lastPack, cue: null } : null, filter: (c) => !c.sustained, label: 'sounds to add', search: true,
+      badge: (pack, cue) => { const n = inSong(pack, cue); return n ? `in song${n > 1 ? ` ×${n}` : ''}` : null; },
+      onPick: (pack, cue) => { add.disabled = false; add.textContent = `+ Add ${cue}`; } });
+    const dlg = sheet({ title: 'Add sounds', note: 'Pick a game, or find a sound across all of them. Tap a sound to hear it; Add makes it a row, and you can keep adding. Beds are not tracks.', body: [picker, status, panelHelp(PANELS.picker.title, PANELS.picker.body)], wide: true, actions: [
+      el('button', { class: 'tool', type: 'button', onclick: () => dlg.close() }, 'Done'), add,
     ] });
+    dlg.addEventListener('close', () => { if (added.length) Share.toast(`${added.length} track${added.length === 1 ? '' : 's'} added`, 'success', 1400); });
   }
 
   openTrack(t) {

@@ -467,3 +467,21 @@ details.more > summary .panel-help { display: inline-flex; }
 .pads.pads-l .pad { min-height: 7rem; }
 .pads.pads-l .pad-name { font-size: 1.05rem; }
 .pads.no-keys .pad-key { display: none; }
+
+/* ── adding sounds and patterns (docs/add-flow-2026-09.md) ─────────── */
+.tool:disabled { opacity: 0.45; cursor: default; }
+.picker-games { flex-wrap: wrap; overflow: visible; }
+.picker-find { font: inherit; font-size: 0.95rem; padding: 0.45rem 0.7rem; border: 1px solid var(--line); border-radius: 0.6rem; background: var(--bg); color: var(--fg); width: 100%; box-sizing: border-box; }
+.picker-find:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.picker-note { margin: 0; font-size: 0.85rem; color: var(--muted); min-height: 1.25em; }
+.picker-note b { color: var(--fg); font-weight: 600; }
+.cue-game { color: var(--muted); font-weight: 400; margin-right: 0.35rem; }
+.cue-chip.is-picked .cue-game { color: inherit; opacity: 0.8; }
+.cue-badge { margin-left: 0.45rem; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.02em; color: var(--bg); background: hsl(var(--hue) 60% 55%); padding: 0.05rem 0.45rem; border-radius: 999px; vertical-align: 0.1em; }
+.picker-added { color: var(--fg); }
+.picker-added:empty { display: none; }
+.pattern-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.chain-add { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
+.chain-add .tool { padding: 0.2rem 0.6rem; font-size: 0.8rem; border-radius: 999px; }
+.chip-open { font: inherit; border: 0; background: transparent; color: var(--fg); cursor: pointer; border-radius: 999px; }
+.chip-open:hover { background: var(--line); }
