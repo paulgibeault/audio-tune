@@ -143,6 +143,12 @@ export function noteFor(packId, cueName) {
   return p && p.note ? p.note : '';
 }
 
+/** The gestures a cue is built from (Explore's recipe), or []. */
+export function elementsFor(packId, cueName) {
+  const p = CUE_PARAMS[packId] && CUE_PARAMS[packId][cueName];
+  return p && Array.isArray(p.elements) ? p.elements : [];
+}
+
 /** Default parameter values for a cue, or null if it takes none. */
 export function defaultParams(packId, cueName) {
   const spec = paramsFor(packId, cueName);

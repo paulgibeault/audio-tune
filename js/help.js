@@ -184,11 +184,11 @@ Object.assign(PANELS, {
   },
   patterns: {
     title: 'Patterns',
-    body: 'A pattern is one grid of steps for every track. Songs usually want more than one — a verse and a fill, say. Tabs switch which pattern you are editing; the one playing is shown in the position readout.',
+    body: 'A pattern is one grid of steps for every track. Songs usually want more than one — a verse and a fill, say. Duplicate copies the pattern you are on, so a fill starts from the groove; Empty starts blank. Either joins the end of the chain and opens for editing, so Play hears it at once. Tabs switch which pattern you are editing; the one playing is shown in the position readout.',
   },
   chain: {
     title: 'Song chain',
-    body: 'The order patterns play in, each with a repeat count. Move a chip left or right to reorder, − and + to change its repeats, × to drop it. The chain loops; the chip lighting up is the one playing.',
+    body: 'The order patterns play in, each with a repeat count. Move a chip left or right to reorder, − and + to change its repeats, × to drop it; tap its name to edit that pattern. The +A +B buttons play a pattern again at the end, so A B A B is a few taps. The chain loops; the chip lighting up is the one playing.',
   },
   grid: {
     title: 'Step grid',
@@ -196,7 +196,7 @@ Object.assign(PANELS, {
   },
   track: {
     title: 'Track',
-    body: 'A track is one fleet sound — any game\'s cue — played through that game\'s own room. Tap its name for level, the game parameters it takes, and "same every hit", which locks the seed so it repeats exactly. M mutes, S solos. Keys 1–9 play the first nine tracks.',
+    body: 'A track is one fleet sound — any game\'s cue — played through that game\'s own room. Add sounds keeps its sheet open, so a kit is pick, add, pick, add, Done; a sound already in the song says so on its chip. Tap a track\'s name for level, the game parameters it takes, and "same every hit", which locks the seed so it repeats exactly. M mutes, S solos. Keys 1–9 play the first nine tracks.',
   },
 });
 
@@ -284,7 +284,7 @@ Object.assign(PANELS, {
   },
   picker: {
     title: 'Picking a sound',
-    body: 'A game, then one of its sounds. Tap a sound to hear it — it plays exactly as the game plays it, through the game\'s own room. Sounds marked ∞ are beds: they run until stopped.',
+    body: 'A game, then one of its sounds — or type to find a sound in every game at once, by its name, its game, or what it is ("bell", "water", "thump"). Tap a sound to hear it — it plays exactly as the game plays it, through the game\'s own room — and the line beneath says what it is. Sounds marked ∞ are beds: they run until stopped.',
   },
 });
 
@@ -330,7 +330,7 @@ export const GUIDE = [
     id: 'compose', title: 'Composing',
     body: [
       'Compose turns pads into tracks and tracks into songs. Add a sound from any game; it becomes a row in the step grid, played through its game\'s room. Tap cells to place hits, drag on them for loudness. Every track can lock its seed for a drum-machine repeat or leave it free so each hit is a fresh take, the way the games play.',
-      'Patterns are grids; the chain is the song — patterns in order with repeat counts, looping. Tempo and swing are live. Record and play the number keys in time and hits land on the nearest step.',
+      'Patterns are grids; the chain is the song — patterns in order with repeat counts, looping. Duplicate the pattern you are on for a fill; a new pattern joins the chain by itself. Tempo and swing are live. Record and play the number keys in time and hits land on the nearest step.',
       'Timing is sample-accurate: a scheduler looks a fraction of a second ahead and hands every hit to the audio clock with an exact start time. Nothing audible is fired from a JavaScript timer.',
     ],
   },

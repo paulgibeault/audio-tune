@@ -161,3 +161,27 @@ test('compactSong / expandSong round-trip a song into a few hundred bytes', () =
   assert.throws(() => Song.expandSong({ v: 1, t: [], p: [['A', { 0: 'x' }]], c: [] }), /step row/);
   assert.throws(() => Song.expandSong({ v: 1, t: [], p: [], c: [[3, 1]] }), /chain/);
 });
+
+test('song: a new pattern joins the chain; a duplicate copies rows without sharing them', () => {
+  const s = Song.newSong({});
+  const a = s.patterns[0];
+  const t = Song.addTrack(s, Song.newTrack({ pack: 'x', cue: 'a' }));
+  Song.toggleStep(s, a, t.id, 0, 1); Song.setStep(s, a, t.id, 4, 0.5);
+  const b = Song.addPattern(s);
+  assert.deepEqual(s.chain.map((c) => c.pattern), [a.id, b.id], 'an empty pattern joins the end of the chain');
+  assert.deepEqual(b.steps, {}, 'and is blank');
+  const c = Song.duplicatePattern(s, a.id);
+  assert.equal(c.name, 'C');
+  assert.deepEqual(s.chain.map((x) => x.pattern), [a.id, b.id, c.id]);
+  assert.deepEqual(c.steps[t.id], a.steps[t.id]);
+  assert.notEqual(c.steps[t.id], a.steps[t.id], 'a copy, not the same row');
+  Song.setStep(s, c, t.id, 0, 0);
+  assert.equal(a.steps[t.id][0], 1, 'editing the copy leaves the source alone');
+  const d = Song.addPattern(s, 'D', { chain: false });
+  assert.equal(s.chain.length, 3, 'opt-out for the model\'s own callers');
+  assert.ok(d);
+  while (s.patterns.length < Song.MAX_PATTERNS) assert.ok(Song.addPattern(s));
+  assert.equal(Song.addPattern(s), null, 'the pattern cap holds');
+  assert.equal(Song.duplicatePattern(s, a.id), null);
+  assert.equal(Song.validateSong(s), true);
+});

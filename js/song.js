@@ -11,6 +11,7 @@
 export const SONG_VERSION = 1;
 export const STEP_OPTIONS = [8, 16, 32];
 export const BAR_OPTIONS = [1, 2, 4];
+export const MAX_PATTERNS = 16;
 
 let counter = 0;
 export function uid(prefix) {
@@ -40,9 +41,23 @@ export function removeTrack(song, trackId) {
   for (const p of song.patterns) delete p.steps[trackId];
 }
 
-export function addPattern(song, name) {
+/** A blank pattern; it joins the end of the chain unless `chain` is false. */
+export function addPattern(song, name, { chain = true } = {}) {
+  if (song.patterns.length >= MAX_PATTERNS) return null;
   const p = newPattern(name || nextPatternName(song));
   song.patterns.push(p);
+  if (chain) chainAdd(song, p.id);
+  return p;
+}
+
+/** A copy of `patternId` (rows copied, not shared), named next in line; it joins the end of the chain unless `chain` is false. */
+export function duplicatePattern(song, patternId, { chain = true } = {}) {
+  if (song.patterns.length >= MAX_PATTERNS) return null;
+  const src = song.patterns.find((p) => p.id === patternId) || song.patterns[0];
+  const p = newPattern(nextPatternName(song));
+  for (const [tid, row] of Object.entries(src.steps)) p.steps[tid] = row.slice();
+  song.patterns.push(p);
+  if (chain) chainAdd(song, p.id);
   return p;
 }
 
@@ -156,7 +171,7 @@ export function validateSong(x, { packs = null } = {}) {
   if (!STEP_OPTIONS.includes(x.stepsPerBar)) fail('stepsPerBar');
   if (!BAR_OPTIONS.includes(x.bars)) fail('bars');
   if (!Array.isArray(x.tracks) || x.tracks.length > 32) fail('tracks');
-  if (!Array.isArray(x.patterns) || x.patterns.length < 1 || x.patterns.length > 16) fail('patterns');
+  if (!Array.isArray(x.patterns) || x.patterns.length < 1 || x.patterns.length > MAX_PATTERNS) fail('patterns');
   if (!Array.isArray(x.chain) || x.chain.length > 64) fail('chain');
   const len = x.stepsPerBar * x.bars;
   const trackIds = new Set();

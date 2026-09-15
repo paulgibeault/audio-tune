@@ -6,7 +6,8 @@
 import { el } from './controls.js';
 import { organize } from './organize.js';
 import * as Packs from './packs.js';
-import { noteFor, defaultParams } from './cue-params.js';
+import { noteFor, defaultParams, elementsFor } from './cue-params.js';
+import { matchSounds, normQuery } from './find-sounds.js';
 
 // ── menu ──────────────────────────────────────────────────────────────
 
@@ -120,48 +121,81 @@ export function groupedControls(items, { expert = false } = {}) {
 /**
  * Game chips, then that game's sounds as chips; tap a sound to hear it and
  * pick it. opts: { packs, picked: {pack, cue}|null, onPick(pack, cue,
- * cueInfo), filter(cue) → bool, audition }. Returns the element with
- * .select(pack, cue) and .value.
+ * cueInfo), filter(cue) → bool, audition, label, search, badge(pack, cue)
+ * → text|null }. With `search`, a find field at the top matches every
+ * game's sounds at once (docs/add-flow-2026-09.md). Returns the element
+ * with .value (the pick, or null), .select(pack, cue) and .refresh().
  */
-export function soundPicker({ packs, picked = null, onPick, filter = null, audition = true, label = 'sounds' }) {
+export function soundPicker({ packs, picked = null, onPick, filter = null, audition = true, label = 'sounds', search = false, badge = null }) {
   let current = picked ? { ...picked } : null;
   let packId = picked ? picked.pack : '';
+  let query = '';
+  let gen = 0;   // fillCues runs are async; only the latest may paint
   const games = el('div', { class: 'picker-games', role: 'tablist', 'aria-label': 'game' });
   const cues = el('div', { class: 'cue-grid', role: 'listbox', 'aria-label': label });
-  const root = el('div', { class: 'picker' }, games, cues);
+  const note = el('p', { class: 'picker-note', 'aria-live': 'polite' });
+  const find = search ? el('input', { class: 'picker-find', type: 'search', placeholder: 'Find a sound in any game…', 'aria-label': 'find a sound', autocomplete: 'off',
+    oninput: (e) => { query = e.target.value; renderGames(); fillCues(); } }) : null;
+  const root = el('div', { class: 'picker' }, find, games, cues, note);
+  const searching = () => !!normQuery(query);
   const renderGames = () => games.replaceChildren(...packs.map((p) => el('button', {
-    class: 'pack-tab', role: 'tab', type: 'button', 'aria-selected': String(p.id === packId), style: `--hue:${p.hue}`,
-    onclick: () => { packId = p.id; renderGames(); fillCues(); },
+    class: 'pack-tab', role: 'tab', type: 'button', 'aria-selected': String(p.id === packId && !searching()), style: `--hue:${p.hue}`,
+    onclick: () => { packId = p.id; if (find) { find.value = ''; query = ''; } renderGames(); fillCues(); },
   }, p.name)));
+  const showNote = () => {
+    if (!current || !current.cue) { note.replaceChildren(); return; }
+    const n = noteFor(current.pack, current.cue);
+    const g = packs.find((p) => p.id === current.pack);
+    note.replaceChildren(el('b', {}, current.cue), n ? ` — ${n}` : '', g ? el('small', {}, ` · ${g.name}`) : null);
+  };
+  const chip = (entry, c, withGame) => {
+    const id = entry.desc.id;
+    const on = !!(current && current.pack === id && current.cue === c.name);
+    const b = badge ? badge(id, c.name) : null;
+    return el('button', {
+      class: `cue-chip${on ? ' is-picked' : ''}`, role: 'option', type: 'button', 'aria-selected': String(on), dataset: { cue: c.name, pack: id },
+      title: noteFor(id, c.name) || c.name, style: `--hue:${entry.desc.hue}`,
+      onclick: () => {
+        current = { pack: id, cue: c.name };
+        cues.querySelectorAll('.cue-chip').forEach((x) => { const hit = x.dataset.cue === c.name && x.dataset.pack === id; x.classList.toggle('is-picked', hit); x.setAttribute('aria-selected', String(hit)); });
+        showNote();
+        if (audition && !c.sustained) Packs.fire(id, c.name, { params: defaultParams(id, c.name) });
+        onPick(id, c.name, c);
+      },
+    }, withGame ? el('small', { class: 'cue-game' }, entry.desc.name) : null, c.name, c.sustained ? el('small', {}, ' ∞') : null, b ? el('span', { class: 'cue-badge' }, b) : null);
+  };
   async function fillCues() {
+    const my = ++gen;
     cues.replaceChildren();
-    if (!packId) { cues.append(el('span', { class: 'ctl-hint' }, 'Pick a game to see its sounds.')); return; }
-    cues.append(el('span', { class: 'ctl-hint' }, 'Loading…'));
-    const entry = await Packs.load(packId);
-    if (entry.desc.id !== packId) return;
-    cues.replaceChildren();
-    if (entry.status !== 'ready') { cues.append(el('span', { class: 'board-status is-error' }, `Pack unavailable — ${entry.error}`)); return; }
-    for (const c of entry.pack.cues) {
-      if (filter && !filter(c)) continue;
-      const on = !!(current && current.pack === packId && current.cue === c.name);
-      cues.append(el('button', {
-        class: `cue-chip${on ? ' is-picked' : ''}`, role: 'option', type: 'button', 'aria-selected': String(on), dataset: { cue: c.name },
-        title: noteFor(packId, c.name) || c.name, style: `--hue:${entry.desc.hue}`,
-        onclick: () => {
-          current = { pack: packId, cue: c.name };
-          cues.querySelectorAll('.cue-chip').forEach((x) => { const hit = x.dataset.cue === c.name; x.classList.toggle('is-picked', hit); x.setAttribute('aria-selected', String(hit)); });
-          if (audition && !c.sustained) Packs.fire(packId, c.name, { params: defaultParams(packId, c.name) });
-          onPick(packId, c.name, c);
-        },
-      }, c.name, c.sustained ? el('small', {}, ' ∞') : null));
+    if (searching()) {
+      cues.append(el('span', { class: 'ctl-hint' }, 'Searching…'));
+      const entries = await Promise.all(packs.map((p) => Packs.load(p.id).catch(() => null)));
+      if (my !== gen) return;
+      const sounds = [];
+      for (const entry of entries) {
+        if (!entry || entry.status !== 'ready') continue;
+        for (const c of entry.pack.cues) { if (filter && !filter(c)) continue; sounds.push({ pack: entry.desc.id, game: entry.desc.name, cue: c.name, note: noteFor(entry.desc.id, c.name), elements: elementsFor(entry.desc.id, c.name), entry, c }); }
+      }
+      const hits = matchSounds(sounds, query);
+      cues.replaceChildren(...hits.map((h) => chip(h.entry, h.c, true)));
+      if (!hits.length) cues.append(el('span', { class: 'ctl-hint' }, `Nothing in any game matches "${query.trim()}".`));
+      return;
     }
+    if (!packId) { cues.append(el('span', { class: 'ctl-hint' }, search ? 'Pick a game to see its sounds, or search them all.' : 'Pick a game to see its sounds.')); return; }
+    cues.append(el('span', { class: 'ctl-hint' }, 'Loading…'));
+    const entry = await Packs.load(packId).catch(() => null);
+    if (my !== gen) return;
+    cues.replaceChildren();
+    if (!entry || entry.status !== 'ready') { cues.append(el('span', { class: 'board-status is-error' }, `Pack unavailable — ${entry ? entry.error : packId}`)); return; }
+    for (const c of entry.pack.cues) { if (filter && !filter(c)) continue; cues.append(chip(entry, c, false)); }
     if (!cues.children.length) cues.append(el('span', { class: 'ctl-hint' }, 'Nothing here fits.'));
   }
-  renderGames(); fillCues();
-  return Object.assign(root, {
-    get value() { return current; },
-    select(pack, cue) { packId = pack || ''; current = pack && cue ? { pack, cue } : null; renderGames(); fillCues(); },
-  });
+  renderGames(); fillCues(); showNote();
+  // A real getter: Object.assign would copy a getter's value once, freezing it.
+  Object.defineProperty(root, 'value', { get: () => (current && current.cue ? current : null) });
+  root.select = (pack, cue) => { packId = pack || ''; current = pack && cue ? { pack, cue } : null; renderGames(); fillCues(); showNote(); };
+  root.refresh = () => { fillCues(); };
+  return root;
 }
 
 /** A modal sheet with a title, a body and actions; resolves when closed. */
